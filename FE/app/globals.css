@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,500;0,600;0,700;1,700&family=Orbitron:wght@600;700;800;900&family=Press+Start+2P&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -40,36 +40,67 @@
 }
 
 @layer base {
-  /* Type system: Press Start 2P is a display face -- built for short, large,
-     high-contrast labels (headings, buttons, badges, HUD numbers). Forcing it
-     onto every element, including body copy and 10px table labels, is what
-     was making small text unreadable. Geist Sans (already loaded on <html>
-     in layout.tsx) is the default everywhere; .font-pixel opts specific
-     elements back into the display face. */
   body {
     color: hsl(var(--foreground));
-    background-color: #050605;
+    background-color: #050705;
     background-image:
-      radial-gradient(circle at center, rgba(34, 255, 136, 0.12) 1.5px, transparent 1.5px),
-      linear-gradient(rgba(34, 255, 136, 0.05) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(34, 255, 136, 0.05) 1px, transparent 1px);
-    background-size: 20px 20px, 20px 20px, 20px 20px;
+      radial-gradient(circle at center, rgba(34, 255, 136, 0.08) 1.5px, transparent 1.5px),
+      linear-gradient(rgba(34, 255, 136, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34, 255, 136, 0.03) 1px, transparent 1px);
+    background-size: 24px 24px, 24px 24px, 24px 24px;
     background-position: center center;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   }
 
-  h1, h2, h3 {
-    font-family: 'Press Start 2P', cursive;
-    line-height: 1.6;
-    letter-spacing: 0.01em;
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-press-start-2p), 'Press Start 2P', monospace;
+    font-weight: 400;
+    letter-spacing: 0.02em;
+    line-height: 1.4;
   }
 
-  button {
-    font-family: 'Press Start 2P', cursive;
+  .font-orbitron {
+    font-family: 'Orbitron', sans-serif;
+  }
+
+  .font-chakra {
+    font-family: 'Chakra Petch', sans-serif;
   }
 
   .font-pixel {
     font-family: 'Press Start 2P', cursive;
     line-height: 1.6;
+  }
+
+  .clip-chamfer {
+    clip-path: polygon(
+      0 0,
+      calc(100% - 10px) 0,
+      100% 10px,
+      100% 100%,
+      10px 100%,
+      0 calc(100% - 10px)
+    );
+  }
+
+  .clip-chamfer-lg {
+    clip-path: polygon(
+      0 0,
+      calc(100% - 18px) 0,
+      100% 18px,
+      100% 100%,
+      18px 100%,
+      0 calc(100% - 18px)
+    );
+  }
+
+  .scanlines {
+    background: linear-gradient(
+      rgba(18, 16, 16, 0) 50%,
+      rgba(0, 0, 0, 0.35) 50%
+    );
+    background-size: 100% 4px;
+    pointer-events: none;
   }
 
   .font-body {

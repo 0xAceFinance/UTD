@@ -10,6 +10,11 @@ const config: Config = {
   ],
   theme: {
   	extend: {
+  		fontFamily: {
+  			orbitron: ['Orbitron', 'sans-serif'],
+  			chakra: ['"Chakra Petch"', 'sans-serif'],
+  			pixel: ['"Press Start 2P"', 'cursive'],
+  		},
   		colors: {
   			background: 'hsl(var(--background))',
   			foreground: 'hsl(var(--foreground))',

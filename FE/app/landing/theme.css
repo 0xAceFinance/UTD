@@ -1,0 +1,209 @@
+/* ===========================================================================
+   Landing page arcade theme. Scoped to .utd so none of it reaches the app
+   shell in app/(app)/.
+
+   The rule that keeps this readable: Press Start 2P is a DISPLAY face only --
+   headings, stat numbers, button labels. Always short, always with controlled
+   line breaks. Sentences get Chakra Petch. Setting pixel type at 48px on a
+   full sentence is what made the old hero wrap mid-clause.
+   =========================================================================== */
+
+.utd {
+  --s0: #060907;
+  --s1: #0c110e;
+  --s2: #131a15;
+  --line: #1e2821;
+  --line-2: #334138;
+  --acid: #2be884;
+  --acid-ink: #04120a;
+  --hot: #ff3d71;
+  --cool: #35c6ff;
+  --txt: #e8efe9;
+  --dim: #97a29a;
+  --faint: #626d66;
+
+  background-color: var(--s0);
+  color: var(--txt);
+
+  /* Cabinet backdrop: a faint dot grid so large dark areas have some tooth. */
+  background-image: radial-gradient(
+    rgba(43, 232, 132, 0.07) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+}
+
+/* --- Type ---------------------------------------------------------------- */
+
+.utd-pixel {
+  font-family: "Press Start 2P", ui-monospace, monospace;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: 0.02em;
+}
+
+.utd-body {
+  font-family: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.6;
+}
+
+.utd-label {
+  font-family: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* --- Panels -------------------------------------------------------------- */
+
+/* Cabinet panel: chamfered top-right / bottom-left corner, hairline edge and
+   a top light so it reads as a moulded surface rather than a flat div. */
+.utd-panel {
+  position: relative;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  clip-path: polygon(
+    0 0,
+    calc(100% - 12px) 0,
+    100% 12px,
+    100% 100%,
+    12px 100%,
+    0 calc(100% - 12px)
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+/* The Pit is the cabinet's screen, so it gets scanlines. Nothing else does. */
+.utd-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.22) 3px,
+    rgba(0, 0, 0, 0.22) 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+/* HUD corner ticks, drawn rather than typed. The old page spelled these out as
+   literal text ("┌ UTD-07", "SEC_ID_01", "LAW_001"). */
+.utd-ticks::before,
+.utd-ticks::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+  border-color: var(--acid);
+  opacity: 0.55;
+}
+.utd-ticks::before {
+  top: 7px;
+  left: 7px;
+  border-top: 1px solid;
+  border-left: 1px solid;
+}
+.utd-ticks::after {
+  right: 7px;
+  bottom: 7px;
+  border-right: 1px solid;
+  border-bottom: 1px solid;
+}
+
+/* --- Buttons ------------------------------------------------------------- */
+
+/* Arcade key: solid slab with a hard offset shadow that collapses on press. */
+.utd-btn {
+  font-family: "Press Start 2P", ui-monospace, monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--acid);
+  background: var(--acid);
+  color: var(--acid-ink);
+  box-shadow: 3px 3px 0 0 #0a2a18;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background-color 0.12s ease;
+}
+.utd-btn:hover:not(:disabled) {
+  background: #4ff5a0;
+}
+.utd-btn:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 0 0 0 0 #0a2a18;
+}
+.utd-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Status slab. Looks like the primary key but nothing happens when you hit it,
+   because nothing is live yet -- so no hover, no press travel, no pointer. */
+.utd-btn-static {
+  font-family: "Press Start 2P", ui-monospace, monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7em;
+  cursor: default;
+  border: 1px solid var(--acid);
+  background: var(--acid);
+  color: var(--acid-ink);
+  box-shadow: 3px 3px 0 0 #0a2a18;
+}
+
+/* The dot inside it, dark so it reads against the acid fill. */
+.utd-btn-static > i {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  background: var(--acid-ink);
+  animation: utd-breathe 2.4s ease-in-out infinite;
+}
+
+/* --- Bits ---------------------------------------------------------------- */
+
+.utd-live {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: var(--acid);
+  box-shadow: 0 0 9px var(--acid);
+  animation: utd-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes utd-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+/* Circular brand mark. public/logo-mark.png is the emblem cropped out of
+   logo.png, which ships a baked-in black background and a clipped wordmark. */
+.utd-mark {
+  border-radius: 9999px;
+  box-shadow: 0 0 0 1px rgba(43, 232, 132, 0.45), 0 0 14px -2px rgba(43, 232, 132, 0.5);
+}
+
+.utd :focus-visible {
+  outline: 2px solid var(--acid);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .utd-live,
+  .utd-btn-static > i {
+    animation: none;
+  }
+  .utd-btn {
+    transition: none;
+  }
+}

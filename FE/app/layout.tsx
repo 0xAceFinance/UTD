@@ -33,8 +33,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${GeistSans.className} ${pressStart2P.variable}`}>
-      <body className="min-h-screen">
+    <html lang="en" className={`${pressStart2P.variable} dark`}>
+      <body className="min-h-screen font-mono antialiased bg-[#060806] text-[#e4e4e7]">
         <Providers>{children}</Providers>
         <Toaster position="top-right" richColors closeButton />
       </body>
