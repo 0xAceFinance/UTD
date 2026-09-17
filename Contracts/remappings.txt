@@ -1,0 +1,5 @@
+@openzeppelin/utils=lib/openzeppelin-contracts/utils
+@openzeppelin/token/=lib/openzeppelin-contracts/contracts/token
+@openzeppelin/access=lib/openzeppelin-contracts/contracts/access
+ds-test/=lib/forge-std/lib/ds-test/src/
+forge-std/=lib/forge-std/src/

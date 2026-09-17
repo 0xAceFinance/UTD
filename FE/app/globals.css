@@ -1,0 +1,281 @@
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Brand: black + neon green, matching the UTD logo. */
+    --background: 0 0% 4%;
+    --foreground: 0 0% 96%;
+
+    --card: 150 8% 7%;
+    --card-foreground: 0 0% 96%;
+
+    --popover: 150 8% 7%;
+    --popover-foreground: 0 0% 96%;
+
+    --primary: 150 95% 45%;
+    --primary-foreground: 0 0% 6%;
+
+    --secondary: 150 6% 14%;
+    --secondary-foreground: 0 0% 92%;
+
+    --muted: 150 6% 14%;
+    --muted-foreground: 0 0% 62%;
+
+    --accent: 150 95% 45%;
+    --accent-foreground: 0 0% 6%;
+
+    --destructive: 0 84% 62%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 150 6% 22%;
+    --input: 150 6% 16%;
+    --ring: 150 95% 45%;
+
+    --radius: 0px;
+  }
+}
+
+@layer base {
+  /* Type system: Press Start 2P is a display face -- built for short, large,
+     high-contrast labels (headings, buttons, badges, HUD numbers). Forcing it
+     onto every element, including body copy and 10px table labels, is what
+     was making small text unreadable. Geist Sans (already loaded on <html>
+     in layout.tsx) is the default everywhere; .font-pixel opts specific
+     elements back into the display face. */
+  body {
+    color: hsl(var(--foreground));
+    background-color: #050605;
+    background-image:
+      radial-gradient(circle at center, rgba(34, 255, 136, 0.12) 1.5px, transparent 1.5px),
+      linear-gradient(rgba(34, 255, 136, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(34, 255, 136, 0.05) 1px, transparent 1px);
+    background-size: 20px 20px, 20px 20px, 20px 20px;
+    background-position: center center;
+  }
+
+  h1, h2, h3 {
+    font-family: 'Press Start 2P', cursive;
+    line-height: 1.6;
+    letter-spacing: 0.01em;
+  }
+
+  button {
+    font-family: 'Press Start 2P', cursive;
+  }
+
+  .font-pixel {
+    font-family: 'Press Start 2P', cursive;
+    line-height: 1.6;
+  }
+
+  .font-body {
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+  }
+
+  .cyber-button {
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    border: 2px solid hsl(var(--primary));
+    box-shadow:
+      2px 2px 0px hsl(var(--primary)),
+      -2px -2px 0px hsl(var(--primary));
+    image-rendering: pixelated;
+  }
+
+  .cyber-button:hover:not(:disabled) {
+    transform: translate(2px, 2px);
+    box-shadow:
+      0px 0px 0px hsl(var(--primary)),
+      -4px -4px 0px hsl(var(--primary));
+  }
+
+  .cyber-button:active:not(:disabled) {
+    transform: translate(1px, 1px) scale(0.98);
+  }
+
+  .cyber-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .cyber-button:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 3px;
+  }
+
+  /* A "chunky game panel": a strong dark outline (the pale --border token was
+     nearly invisible against the cream background -- that's why boxes read
+     as boundary-less), a single-direction drop shadow to feel lifted off the
+     page, and a subtle top-light/bottom-shade bevel for a puffed-up, tactile
+     surface rather than a flat rectangle. */
+  .cyber-gradient {
+    position: relative;
+    border: 3px solid hsl(var(--foreground) / 0.55);
+    box-shadow:
+      4px 4px 0px hsl(var(--foreground) / 0.28),
+      inset 0 2px 0px hsl(0 0% 100% / 0.07),
+      inset 0 -3px 0px hsl(var(--foreground) / 0.06);
+    image-rendering: pixelated;
+    transition: box-shadow 0.2s ease, transform 0.2s ease;
+  }
+
+  .cyber-gradient.interactive:hover {
+    box-shadow:
+      6px 6px 0px hsl(var(--foreground) / 0.28),
+      inset 0 2px 0px hsl(0 0% 100% / 0.07),
+      inset 0 -3px 0px hsl(var(--foreground) / 0.06);
+    transform: translate(-2px, -2px);
+  }
+
+  .cyber-grid {
+    background-image:
+      linear-gradient(rgba(var(--primary) / 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--primary) / 0.1) 1px, transparent 1px);
+    background-size: 16px 16px;
+    image-rendering: pixelated;
+  }
+
+  .glow-text {
+    text-shadow: 2px 2px hsl(var(--primary));
+  }
+
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background: hsl(var(--primary) / 0.25);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--secondary));
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border: 2px solid hsl(var(--secondary));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.5);
+  }
+
+  /* Duel-specific accents: two energetic sides for a duel, plus tier colors
+     for the Combat Record. Extends the existing cyber-button/cyber-gradient
+     vocabulary rather than replacing it. */
+  :root {
+    --side-a: 330 90% 62%;
+    --side-b: 205 90% 58%;
+    --good: 142 80% 48%;
+    --tier-bronze: 28 60% 55%;
+    --tier-silver: 210 15% 68%;
+    --tier-gold: 42 85% 58%;
+    --tier-diamond: 190 85% 55%;
+  }
+
+  .cyber-button.side-a {
+    border-color: hsl(var(--side-a));
+    box-shadow: 2px 2px 0px hsl(var(--side-a)), -2px -2px 0px hsl(var(--side-a));
+  }
+  .cyber-button.side-a:hover {
+    box-shadow: 0px 0px 0px hsl(var(--side-a)), -4px -4px 0px hsl(var(--side-a));
+  }
+  .cyber-button.side-b {
+    border-color: hsl(var(--side-b));
+    box-shadow: 2px 2px 0px hsl(var(--side-b)), -2px -2px 0px hsl(var(--side-b));
+  }
+  .cyber-button.side-b:hover {
+    box-shadow: 0px 0px 0px hsl(var(--side-b)), -4px -4px 0px hsl(var(--side-b));
+  }
+
+  .cyber-gradient.side-a { border-color: hsl(var(--side-a)); }
+  .cyber-gradient.side-b { border-color: hsl(var(--side-b)); }
+
+  .cyber-button.destructive {
+    border-color: hsl(var(--destructive));
+    box-shadow: 2px 2px 0px hsl(var(--destructive)), -2px -2px 0px hsl(var(--destructive));
+  }
+  .cyber-button.destructive:hover:not(:disabled) {
+    box-shadow: 0px 0px 0px hsl(var(--destructive)), -4px -4px 0px hsl(var(--destructive));
+  }
+
+  /* Modal / dialog surface: same chunky-panel language as .cyber-gradient
+     (border + flat offset shadow, no blur) but heavier, so a modal reads as
+     lifted above a resting panel rather than level with it. */
+  .cyber-modal {
+    position: relative;
+    background: hsl(var(--card));
+    border: 4px solid hsl(var(--foreground) / 0.75);
+    box-shadow:
+      8px 8px 0px hsl(var(--foreground) / 0.3),
+      inset 0 2px 0px hsl(0 0% 100% / 0.07);
+  }
+  .cyber-modal.destructive {
+    border-color: hsl(var(--destructive) / 0.8);
+    box-shadow:
+      8px 8px 0px hsl(var(--destructive) / 0.25),
+      inset 0 2px 0px hsl(0 0% 100% / 0.07);
+  }
+  .cyber-modal-close {
+    border: 2px solid hsl(var(--border));
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+  }
+  .cyber-modal-close:hover {
+    background: hsl(var(--foreground) / 0.06);
+    border-color: hsl(var(--foreground) / 0.5);
+  }
+
+  .pixel-flat {
+    border-radius: 0 !important;
+  }
+
+  @keyframes skeleton-pulse {
+    0%, 100% { opacity: 0.5; }
+    50% { opacity: 0.9; }
+  }
+  .skeleton {
+    background: hsl(var(--border));
+    animation: skeleton-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 2px 2px 0px currentColor, -2px -2px 0px currentColor; }
+    50% { box-shadow: 3px 3px 0px currentColor, -3px -3px 0px currentColor, 0 0 14px currentColor; }
+  }
+  .glow-pulse {
+    animation: pulse-glow 1.8s ease-in-out infinite;
+  }
+
+  /* Landing page (app/landing/) only. */
+  @keyframes float-bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-10px); }
+  }
+  .float-bob {
+    animation: float-bob 4s ease-in-out infinite;
+  }
+
+  @keyframes marquee-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+  .marquee-track {
+    animation: marquee-scroll 28s linear infinite;
+  }
+  .marquee-track:hover {
+    animation-play-state: paused;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .float-bob, .marquee-track, .glow-pulse, .skeleton {
+      animation: none !important;
+    }
+  }
+}

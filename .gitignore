@@ -1,0 +1,9 @@
+node_modules/
+.next/
+*.log
+.env
+.env.local
+.mongo/
+Contracts/out/
+Contracts/cache/
+Contracts/broadcast/*/31337/
