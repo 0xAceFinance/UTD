@@ -27,6 +27,11 @@ import { postJson, getReq, body } from '../helpers/http';
 
 const CREATOR = '0xcreatorAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 const OPPONENT = '0xopponentBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB';
+// Deliberately distinct from postJson's default x-forwarded-for -- a
+// creator and opponent sharing the *same* fake IP is exactly what the
+// wallet-clustering sybil check is designed to catch (see the dedicated
+// "BUG:" test below for the case where that check over-fires).
+const OPPONENT_IP = '8.8.8.8';
 const ESCROW = '0x1000000000000000000000000000000000000010';
 
 function samplesFor(tokenAddress: string, priceUsd = 1) {
@@ -102,7 +107,7 @@ describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {
     // JOIN
     chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
     const joinRes = await joinDuelRoute(
-      postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }),
+      postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }, { 'x-forwarded-for': OPPONENT_IP }),
       { params: Promise.resolve({ id: duel._id }) }
     );
     const joined = (await body(joinRes)).data;
@@ -288,9 +293,10 @@ describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {
     const duel = await createOnChainDuel();
     chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
     getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
-    await joinDuelRoute(postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }), {
-      params: Promise.resolve({ id: duel._id }),
-    });
+    await joinDuelRoute(
+      postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }, { 'x-forwarded-for': OPPONENT_IP }),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
 
     const res = await confirmSettlementRoute(
       postJson(`http://localhost/api/duels/${duel._id}/confirm-settlement`, { txHash: '0x' + 'cc'.repeat(32) }),
@@ -304,9 +310,10 @@ describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {
     const duel = await createOnChainDuel();
     chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
     getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
-    await joinDuelRoute(postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }), {
-      params: Promise.resolve({ id: duel._id }),
-    });
+    await joinDuelRoute(
+      postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }, { 'x-forwarded-for': OPPONENT_IP }),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
     await Duel.findByIdAndUpdate(duel._id, { endTime: new Date(Date.now() - 1000) });
     await getDuelRoute(getReq(`http://localhost/api/duels/${duel._id}`), { params: Promise.resolve({ id: duel._id }) });
 
@@ -333,9 +340,10 @@ describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {
     const duel = await createOnChainDuel();
     chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
     getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
-    await joinDuelRoute(postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }), {
-      params: Promise.resolve({ id: duel._id }),
-    });
+    await joinDuelRoute(
+      postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }, { 'x-forwarded-for': OPPONENT_IP }),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
     await Duel.findByIdAndUpdate(duel._id, { endTime: new Date(Date.now() - 1000) });
     await getDuelRoute(getReq(`http://localhost/api/duels/${duel._id}`), { params: Promise.resolve({ id: duel._id }) });
 
@@ -350,5 +358,43 @@ describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {
     });
     expect(second.status).toBe(200);
     expect(chainVerifyMocks.verifyDuelSettled).toHaveBeenCalledTimes(1); // second call short-circuits before re-verifying
+  });
+
+  it('two wallets with no reverse-proxy IP header (both resolve to the "unknown" sentinel) are NOT treated as sharing an IP', async () => {
+    // getClientIp() (lib/requestSignals.ts) falls back to the literal
+    // string 'unknown' when neither x-forwarded-for nor x-real-ip is
+    // present. Both app/api/duels/route.ts and .../join/route.ts guard
+    // this explicitly (`if (ip !== 'unknown') { await WalletSighting.create(...) }`),
+    // so unlike a real shared IP, this sentinel is never recorded as a
+    // clustering signal -- confirms two genuinely unrelated wallets settle
+    // normally even when neither request carried a proxy header.
+    const { tokenA, tokenB } = await setupTop10();
+    mockCreatedEvent();
+    getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
+    const noProxyHeaders = { 'x-forwarded-for': '' }; // falsy -> getClientIp() falls through to 'unknown'
+
+    const createRes = await createDuelRoute(
+      postJson(
+        'http://localhost/api/duels',
+        { creatorWallet: CREATOR, tokenASymbol: tokenA.symbol, tokenBSymbol: tokenB.symbol, txHash: '0x' + 'aa'.repeat(32) },
+        noProxyHeaders
+      )
+    );
+    const duel = (await body(createRes)).data;
+
+    chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
+    await joinDuelRoute(
+      postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }, noProxyHeaders),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
+
+    await Duel.findByIdAndUpdate(duel._id, { endTime: new Date(Date.now() - 1000) });
+    const settleTickRes = await getDuelRoute(getReq(`http://localhost/api/duels/${duel._id}`), {
+      params: Promise.resolve({ id: duel._id }),
+    });
+    const settled = (await body(settleTickRes)).data;
+
+    expect(settled.status).toBe('SETTLING');
+    expect(settled.flaggedSybil).toBeFalsy();
   });
 });

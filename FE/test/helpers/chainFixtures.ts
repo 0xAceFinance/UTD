@@ -14,16 +14,20 @@ let logCounter = 0;
  */
 export function buildLog(params: {
   address: `0x${string}`;
-  abi: Abi;
+  abi: readonly unknown[];
   eventName: string;
   args: Record<string, unknown>;
 }): Log {
-  const eventAbi = params.abi.find(
+  // ABI JSON imports (e.g. `@/config/contracts`) widen `type`/`inputs` to
+  // plain `string`/`unknown[]`, which viem's strict `Abi` union rejects at
+  // the call site -- cast once here rather than at every test's call site.
+  const abi = params.abi as Abi;
+  const eventAbi = abi.find(
     (item): item is AbiEvent => item.type === 'event' && item.name === params.eventName
   );
   if (!eventAbi) throw new Error(`event ${params.eventName} not found in abi`);
 
-  const topics = encodeEventTopics({ abi: params.abi, eventName: params.eventName, args: params.args } as never);
+  const topics = encodeEventTopics({ abi, eventName: params.eventName, args: params.args } as never);
   const nonIndexedInputs = eventAbi.inputs.filter((input) => !input.indexed);
   const data =
     nonIndexedInputs.length > 0

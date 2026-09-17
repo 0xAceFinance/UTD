@@ -31,7 +31,15 @@ function getMongoUri(): string {
     return uri;
 }
 
-let cached = (global as any).mongoose || { conn: null, promise: null };
+// Must be written back to `global`, not just read from it -- otherwise every
+// dev-mode hot-reload (which re-evaluates this module) creates a fresh, empty
+// `cached` while the real mongoose.connection singleton is still alive from
+// before, and the next connect attempt collides with it ("active connection
+// with different connection strings").
+let cached = (global as any).mongoose;
+if (!cached) {
+    cached = (global as any).mongoose = { conn: null, promise: null };
+}
 
 async function resolveSrvFallback(srvUri: string): Promise<string> {
     try {

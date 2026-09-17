@@ -217,14 +217,6 @@ export default function LandingPage() {
                                 {item.label}
                             </a>
                         ))}
-                        <a
-                            href="https://github.com/0xAceFinance/UTD"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="utd-pixel text-[8px] text-[var(--faint)] transition-colors hover:text-[var(--acid)]"
-                        >
-                            GITHUB
-                        </a>
                     </div>
 
                     <div className="font-mono text-[11px] text-[var(--faint)]">© 2026 UTD</div>

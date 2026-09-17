@@ -103,7 +103,7 @@ describe('lib/duelEngine::simulateTick', () => {
 
     expect(duel.tokenA.rawSamples).toHaveLength(MAX_SAMPLES_PER_SIDE);
     expect(duel.tokenA.rawSamples[duel.tokenA.rawSamples.length - 1].poolAddress).toBe('FRESH-MARKER');
-    expect(duel.tokenA.rawSamples.some((s) => s.poolAddress === firstOriginalSample.poolAddress && s.timestampSec === firstOriginalSample.timestampSec)).toBe(false);
+    expect(duel.tokenA.rawSamples.some((s: { poolAddress: string; timestampSec: number }) => s.poolAddress === firstOriginalSample.poolAddress && s.timestampSec === firstOriginalSample.timestampSec)).toBe(false);
   });
 
   it('is a no-op for a duel that is not LIVE', async () => {
