@@ -8,28 +8,27 @@ try {
     // Ignore if custom DNS cannot be configured
 }
 
-let MONGODB_URI = process.env.MONGODB_URI as string;
-
-if (!MONGODB_URI) {
-    throw new Error("Please define the MONGODB_URI environment variable inside .env.local");
-}
-
-// Automatically escape unencoded '@' in credentials if present
-if (MONGODB_URI.includes('://') && MONGODB_URI.includes('@')) {
-    const parts = MONGODB_URI.split('://');
-    const scheme = parts[0];
-    const rest = parts[1];
-    const atParts = rest.split('@');
-    if (atParts.length > 2) {
-        const hostPart = atParts.pop();
-        const credPart = atParts.join('@');
-        const colonIdx = credPart.indexOf(':');
-        if (colonIdx !== -1) {
-            const user = credPart.slice(0, colonIdx);
-            const pass = credPart.slice(colonIdx + 1);
-            MONGODB_URI = `${scheme}://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${hostPart}`;
+function getMongoUri(): string {
+    let uri = process.env.MONGODB_URI || '';
+    if (!uri) return '';
+    // Automatically escape unencoded '@' in credentials if present
+    if (uri.includes('://') && uri.includes('@')) {
+        const parts = uri.split('://');
+        const scheme = parts[0];
+        const rest = parts[1];
+        const atParts = rest.split('@');
+        if (atParts.length > 2) {
+            const hostPart = atParts.pop();
+            const credPart = atParts.join('@');
+            const colonIdx = credPart.indexOf(':');
+            if (colonIdx !== -1) {
+                const user = credPart.slice(0, colonIdx);
+                const pass = credPart.slice(colonIdx + 1);
+                uri = `${scheme}://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${hostPart}`;
+            }
         }
     }
+    return uri;
 }
 
 let cached = (global as any).mongoose || { conn: null, promise: null };
@@ -64,6 +63,11 @@ async function resolveSrvFallback(srvUri: string): Promise<string> {
 
 export async function connectToDatabase() {
     if (cached.conn) return cached.conn;
+
+    const MONGODB_URI = getMongoUri();
+    if (!MONGODB_URI) {
+        throw new Error("Please define the MONGODB_URI environment variable inside .env.local");
+    }
 
     if (!cached.promise) {
         cached.promise = (async () => {

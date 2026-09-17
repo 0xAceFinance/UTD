@@ -5,59 +5,111 @@ import { sound } from "./SoundEngine"
 import { SectionHeading } from "./SectionHeading"
 import { Check } from "lucide-react"
 
-const TOTAL_PASSES = 1000
+interface Reserved {
+    passNumber: number
+    alreadyRegistered: boolean
+}
 
 export function WhitelistTerminal() {
     const [input, setInput] = useState("")
-    const [reservedPass, setReservedPass] = useState<number | null>(null)
-    const [claimedCount, setClaimedCount] = useState(847)
+    const [reserved, setReserved] = useState<Reserved | null>(null)
+    const [counts, setCounts] = useState<{ claimed: number; total: number } | null>(null)
     const [submitting, setSubmitting] = useState(false)
+    const [error, setError] = useState<string | null>(null)
 
+    // Real count from the database. Until it arrives the aside stays empty
+    // rather than showing a placeholder number -- the previous version shipped
+    // a hardcoded 847 that had never corresponded to anything.
+    //
+    // Retried, because a single swallowed failure here (a cold serverless
+    // start, a slow first connection) would otherwise hide the count for the
+    // rest of the visit with nothing to show for it.
     useEffect(() => {
-        try {
-            const saved = localStorage.getItem("utd_whitelist_pass")
-            if (saved) setReservedPass(Number(saved))
-        } catch {}
+        let cancelled = false
+
+        const load = async (attempt = 0): Promise<void> => {
+            try {
+                const res = await fetch("/api/whitelist")
+                const body = await res.json()
+                if (cancelled) return
+                if (body?.success) {
+                    setCounts(body.data)
+                    return
+                }
+                throw new Error("unsuccessful")
+            } catch {
+                if (cancelled || attempt >= 2) return
+                await new Promise((r) => setTimeout(r, 600 * (attempt + 1)))
+                if (!cancelled) return load(attempt + 1)
+            }
+        }
+
+        load()
+        return () => {
+            cancelled = true
+        }
     }, [])
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!input.trim() || submitting || reservedPass) return
+        if (!input.trim() || submitting || reserved) return
 
         sound.playBlip(700)
         setSubmitting(true)
+        setError(null)
 
-        setTimeout(() => {
-            const passNumber = claimedCount + 1
-            setClaimedCount(passNumber)
-            setReservedPass(passNumber)
-            try {
-                localStorage.setItem("utd_whitelist_pass", String(passNumber))
-            } catch {}
+        try {
+            const res = await fetch("/api/whitelist", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ identifier: input.trim() }),
+            })
+            const body = await res.json()
+
+            if (!res.ok || !body?.success) {
+                setError(
+                    typeof body?.error === "string"
+                        ? body.error
+                        : "Could not reach the server. Try again in a moment.",
+                )
+                sound.playBlip(220)
+                return
+            }
+
+            setReserved({
+                passNumber: body.data.passNumber,
+                alreadyRegistered: body.data.alreadyRegistered,
+            })
+            setCounts({ claimed: body.data.claimed, total: body.data.total })
             sound.playWin()
+        } catch {
+            setError("Could not reach the server. Try again in a moment.")
+            sound.playBlip(220)
+        } finally {
             setSubmitting(false)
-        }, 900)
+        }
     }
 
-    const remaining = TOTAL_PASSES - claimedCount
+    const aside = counts
+        ? `${(counts.total - counts.claimed).toLocaleString()} of ${counts.total.toLocaleString()} day-one passes left.`
+        : undefined
 
     return (
         <div>
-            <SectionHeading
-                title="GET IN"
-                aside={`${remaining} of ${TOTAL_PASSES.toLocaleString()} day-one passes left.`}
-            />
+            <SectionHeading title="GET IN" aside={aside} />
 
             <div className="utd-panel utd-ticks mt-7 p-6 sm:p-8">
-                {reservedPass ? (
+                {reserved ? (
                     <div className="flex items-center gap-3">
                         <Check className="h-5 w-5 flex-none text-[var(--acid)]" />
                         <div>
                             <div className="utd-pixel text-lg text-white">
-                                Pass #{String(reservedPass).padStart(4, "0")} is yours
+                                Pass #{String(reserved.passNumber).padStart(4, "0")}
                             </div>
                             <p className="utd-body mt-1.5 text-[13px] text-[var(--dim)]">
-                                Saved on this device. We&apos;ll message you once the contracts are live.
+                                {reserved.alreadyRegistered
+                                    ? "You were already on the list. Same pass, same spot."
+                                    : "You're on the list. We'll message you once the contracts are live."}
                             </p>
                         </div>
                     </div>
@@ -72,7 +124,11 @@ export function WhitelistTerminal() {
                                 type="text"
                                 placeholder="Wallet address or email"
                                 value={input}
-                                onChange={(e) => setInput(e.target.value)}
+                                onChange={(e) => {
+                                    setInput(e.target.value)
+                                    if (error) setError(null)
+                                }}
+                                aria-invalid={Boolean(error)}
                                 className="utd-body flex-1 border border-[var(--line-2)] bg-[var(--s0)] px-4 py-3.5 text-[14px] text-white placeholder:text-[var(--faint)] focus:border-[var(--acid)] focus:outline-none"
                             />
                             <button
@@ -84,8 +140,12 @@ export function WhitelistTerminal() {
                             </button>
                         </form>
 
-                        <p className="utd-body mt-4 text-[13px] text-[var(--faint)]">
-                            One message when we launch. Nothing else.
+                        <p
+                            className={`utd-body mt-4 text-[13px] ${
+                                error ? "text-[var(--hot)]" : "text-[var(--faint)]"
+                            }`}
+                        >
+                            {error ?? "One message when we launch. Nothing else."}
                         </p>
                     </>
                 )}
