@@ -18,7 +18,9 @@ import type { DataSource, PoolSample, TokenCandidate } from "@mcapduel/engine";
  * same reasoning applied to jurisdictions), not something DexScreener knows.
  */
 
-const CHAIN_ID = "robinhood";
+/** DexScreener chain slug the whole token universe is scoped to. Also used
+ * by lib/tokenLinks.ts to build per-token GMGN links. */
+export const CHAIN_ID = "robinhood";
 const DEX_API = "https://api.dexscreener.com";
 const BATCH_SIZE = 30;
 
