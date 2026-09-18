@@ -149,4 +149,15 @@ contract CombatRecordNFTAdversarialTest is Test {
         assertEq(nft.totalPoints(player), totalBefore); // unaffected -> tier can never regress
         assertEq(nft.tierOf(player), "Silver"); // still >= 5,000 even after "spending" points
     }
+
+    function test_contractWalletWithoutERC721ReceiverStillGetsPoints() public {
+        address wallet = address(new NoReceiverWallet());
+        vm.prank(pointsOracle);
+        nft.addPoints(wallet, 500);
+        assertEq(nft.totalPoints(wallet), 500);
+        assertEq(nft.ownerOf(nft.tokenIdOf(wallet)), wallet);
+    }
 }
+
+/// @dev A smart-contract wallet with no onERC721Received (e.g. many AA wallets).
+contract NoReceiverWallet {}

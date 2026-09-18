@@ -44,7 +44,7 @@ contract BattleEscrowFactoryAdversarialTest is Test {
     function setUp() public {
         implementation = new BattleEscrow();
         stakeToken = new MockERC20();
-        factory = new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, address(stakeToken));
+        factory = new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, address(stakeToken), 1);
     }
 
     // ==================== access control ====================
@@ -84,22 +84,22 @@ contract BattleEscrowFactoryAdversarialTest is Test {
 
     function test_constructorRejectsZeroImplementation() public {
         vm.expectRevert("bad implementation");
-        new BattleEscrowFactory(address(0), oracleSigner, platformTreasury, address(stakeToken));
+        new BattleEscrowFactory(address(0), oracleSigner, platformTreasury, address(stakeToken), 1);
     }
 
     function test_constructorRejectsZeroOracleSigner() public {
         vm.expectRevert("bad signer");
-        new BattleEscrowFactory(address(implementation), address(0), platformTreasury, address(stakeToken));
+        new BattleEscrowFactory(address(implementation), address(0), platformTreasury, address(stakeToken), 1);
     }
 
     function test_constructorRejectsZeroTreasury() public {
         vm.expectRevert("bad treasury");
-        new BattleEscrowFactory(address(implementation), oracleSigner, address(0), address(stakeToken));
+        new BattleEscrowFactory(address(implementation), oracleSigner, address(0), address(stakeToken), 1);
     }
 
     function test_constructorRejectsZeroStakeToken() public {
         vm.expectRevert("bad stake token");
-        new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, address(0));
+        new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, address(0), 1);
     }
 
     // ==================== oracle signer timelock ====================
@@ -286,5 +286,27 @@ contract BattleEscrowFactoryAdversarialTest is Test {
         factory.joinDuel(duel);
 
         assertEq(stakeToken.balanceOf(duel), BUY_IN * 2);
+    }
+
+    // ==================== minBuyIn (dust-stake points farming) ====================
+
+    function test_createDuelRejectsBuyInBelowMinimum() public {
+        factory.setMinBuyIn(1e18);
+        vm.expectRevert("bad buyIn");
+        factory.createDuel(address(stakeToken), 1e18 - 1, 0, 15 minutes, "A", "B");
+    }
+
+    function test_constructorRejectsZeroMinBuyIn() public {
+        vm.expectRevert("bad min buyIn");
+        new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, address(stakeToken), 0);
+    }
+
+    function test_setMinBuyInRejectsZeroAndNonOwner() public {
+        vm.expectRevert("bad min buyIn");
+        factory.setMinBuyIn(0);
+
+        vm.prank(rando);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", rando));
+        factory.setMinBuyIn(1e18);
     }
 }

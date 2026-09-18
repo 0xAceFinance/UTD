@@ -15,6 +15,8 @@ import "../test/duel/MockERC20.sol";
  *  PLATFORM_TREASURY_ADDRESS address the 20% platform cut is sent to
  *  STAKE_TOKEN_ADDRESS      the one ERC20 createDuel() will accept
  *                           (not required if DEPLOY_MOCK_STAKE_TOKEN=true)
+ *  MIN_BUY_IN               smallest buyIn createDuel() accepts, in stake-token
+ *                           units (optional with the mock token: defaults to 1e18)
  *
  * Optional:
  *  DEPLOY_MOCK_STAKE_TOKEN=true   also deploys MockERC20 (mUSD), mints
@@ -46,11 +48,17 @@ contract DeployDuel is Script {
             stakeToken = vm.envAddress("STAKE_TOKEN_ADDRESS");
         }
 
-        BattleEscrowFactory factory = new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, stakeToken);
+        // Mock mUSD has 18 decimals, so default the floor to 1 mUSD there. For a
+        // real stablecoin MIN_BUY_IN is required (e.g. 1000000 = 1 USDC at 6 decimals).
+        uint256 minBuyIn = deployMockStakeToken ? vm.envOr("MIN_BUY_IN", uint256(1e18)) : vm.envUint("MIN_BUY_IN");
+
+        BattleEscrowFactory factory =
+            new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, stakeToken, minBuyIn);
         console.log("BattleEscrowFactory:", address(factory));
         console.log("oracleSigner:", oracleSigner);
         console.log("platformTreasury:", platformTreasury);
         console.log("approvedStakeToken:", stakeToken);
+        console.log("minBuyIn:", minBuyIn);
 
         vm.stopBroadcast();
     }

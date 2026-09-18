@@ -257,4 +257,30 @@ contract RedemptionVaultAdversarialTest is Test {
         vault.redeem(8_000); // must succeed independently
         assertEq(vault.schedulesLength(player2), 1);
     }
+
+    // ==================== solvency (pool can't be over-promised) ====================
+
+    function test_redeemRejectsWhenThePoolCantCoverTheNewSchedule() public {
+        RedemptionVault small = new RedemptionVault(address(rewardToken), address(nft), RATE);
+        nft.setRedemptionVault(address(small));
+        rewardToken.mint(address(small), 5e18); // covers 5,000 points at RATE
+
+        vm.prank(player);
+        small.redeem(5_000);
+        assertEq(small.totalCommitted(), 5e18);
+
+        vm.prank(player2);
+        vm.expectRevert("rewards pool exhausted");
+        small.redeem(1); // would promise tokens the pool doesn't hold
+        assertEq(nft.availablePoints(player2), 30_000); // points not burned
+    }
+
+    function test_claimReleasesCommittedTokens() public {
+        vm.prank(player);
+        vault.redeem(1_000);
+        vm.warp(block.timestamp + vault.vestingDurationSeconds());
+        vm.prank(player);
+        vault.claim();
+        assertEq(vault.totalCommitted(), 0);
+    }
 }
