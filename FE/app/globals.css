@@ -6,34 +6,47 @@
 
 @layer base {
   :root {
-    /* Brand: black + neon green, matching the UTD logo. */
-    --background: 0 0% 4%;
-    --foreground: 0 0% 96%;
+    /* Arcade & brand tokens matching the landing page */
+    --s0: #060907;
+    --s1: #0c110e;
+    --s2: #131a15;
+    --line: #1e2821;
+    --line-2: #334138;
+    --acid: #2be884;
+    --acid-ink: #04120a;
+    --hot: #ff3d71;
+    --cool: #35c6ff;
+    --txt: #e8efe9;
+    --dim: #97a29a;
+    --faint: #626d66;
 
-    --card: 150 8% 7%;
-    --card-foreground: 0 0% 96%;
+    --background: 140 20% 3%;
+    --foreground: 130 15% 93%;
 
-    --popover: 150 8% 7%;
-    --popover-foreground: 0 0% 96%;
+    --card: 144 18% 5%;
+    --card-foreground: 130 15% 93%;
 
-    --primary: 150 95% 45%;
-    --primary-foreground: 0 0% 6%;
+    --popover: 144 18% 5%;
+    --popover-foreground: 130 15% 93%;
 
-    --secondary: 150 6% 14%;
-    --secondary-foreground: 0 0% 92%;
+    --primary: 145 78% 54%;
+    --primary-foreground: 150 60% 4%;
 
-    --muted: 150 6% 14%;
-    --muted-foreground: 0 0% 62%;
+    --secondary: 144 12% 9%;
+    --secondary-foreground: 135 10% 80%;
 
-    --accent: 150 95% 45%;
-    --accent-foreground: 0 0% 6%;
+    --muted: 144 10% 12%;
+    --muted-foreground: 135 8% 60%;
 
-    --destructive: 0 84% 62%;
+    --accent: 145 78% 54%;
+    --accent-foreground: 150 60% 4%;
+
+    --destructive: 344 100% 62%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 150 6% 22%;
-    --input: 150 6% 16%;
-    --ring: 150 95% 45%;
+    --border: 145 14% 14%;
+    --input: 145 14% 10%;
+    --ring: 145 78% 54%;
 
     --radius: 0px;
   }
@@ -41,23 +54,16 @@
 
 @layer base {
   body {
-    color: hsl(var(--foreground));
-    background-color: #050705;
-    background-image:
-      radial-gradient(circle at center, rgba(34, 255, 136, 0.08) 1.5px, transparent 1.5px),
-      linear-gradient(rgba(34, 255, 136, 0.03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(34, 255, 136, 0.03) 1px, transparent 1px);
-    background-size: 24px 24px, 24px 24px, 24px 24px;
-    background-position: center center;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    color: var(--txt);
+    background-color: var(--s0);
+    background-image: radial-gradient(
+      rgba(43, 232, 132, 0.07) 1px,
+      transparent 1px
+    );
+    background-size: 22px 22px;
+    font-family: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
   }
 
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-press-start-2p), 'Press Start 2P', monospace;
-    font-weight: 400;
-    letter-spacing: 0.02em;
-    line-height: 1.4;
-  }
 
   .font-orbitron {
     font-family: 'Orbitron', sans-serif;
@@ -305,8 +311,235 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .float-bob, .marquee-track, .glow-pulse, .skeleton {
+    .float-bob, .marquee-track, .glow-pulse, .skeleton, .utd-live {
       animation: none !important;
+    }
+    .utd-btn, .utd-btn-outline, .utd-btn-hot, .utd-btn-cool {
+      transition: none !important;
     }
   }
 }
+
+/* ==========================================================================
+   Arcade Design System Utilities (Shared across landing and app)
+   ========================================================================== */
+
+.utd-pixel {
+  font-family: var(--font-press-start-2p), "Press Start 2P", ui-monospace, monospace;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: 0.02em;
+}
+
+.utd-body {
+  font-family: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.6;
+}
+
+.utd-label {
+  font-family: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.utd-panel {
+  position: relative;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  clip-path: polygon(
+    0 0,
+    calc(100% - 12px) 0,
+    100% 12px,
+    100% 100%,
+    12px 100%,
+    0 calc(100% - 12px)
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.utd-panel-sm {
+  position: relative;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  clip-path: polygon(
+    0 0,
+    calc(100% - 8px) 0,
+    100% 8px,
+    100% 100%,
+    8px 100%,
+    0 calc(100% - 8px)
+  );
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.utd-panel-bordered {
+  position: relative;
+  background: var(--s1);
+  border: 1px solid var(--line-2);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+.utd-ticks {
+  position: relative;
+}
+.utd-ticks::before,
+.utd-ticks::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+  border-color: var(--acid);
+  opacity: 0.55;
+  z-index: 5;
+}
+.utd-ticks::before {
+  top: 6px;
+  left: 6px;
+  border-top: 1px solid;
+  border-left: 1px solid;
+}
+.utd-ticks::after {
+  right: 6px;
+  bottom: 6px;
+  border-right: 1px solid;
+  border-bottom: 1px solid;
+}
+
+.utd-btn {
+  font-family: var(--font-press-start-2p), "Press Start 2P", ui-monospace, monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--acid);
+  background: var(--acid);
+  color: var(--acid-ink);
+  box-shadow: 3px 3px 0 0 #0a2a18;
+  transition: transform 0.08s ease, box-shadow 0.08s ease, background-color 0.12s ease;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  padding: 8px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.utd-btn:hover:not(:disabled) {
+  background: #4ff5a0;
+}
+.utd-btn:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 0 #0a2a18;
+}
+.utd-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.utd-btn-outline {
+  font-family: var(--font-press-start-2p), "Press Start 2P", ui-monospace, monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-2);
+  background: var(--s2);
+  color: var(--dim);
+  box-shadow: 2px 2px 0 0 #000;
+  transition: all 0.12s ease;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.utd-btn-outline:hover:not(:disabled) {
+  border-color: var(--acid);
+  color: var(--acid);
+  background: rgba(43, 232, 132, 0.08);
+}
+.utd-btn-outline:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 0 #000;
+}
+
+.utd-btn-hot {
+  font-family: var(--font-press-start-2p), "Press Start 2P", ui-monospace, monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--hot);
+  background: var(--hot);
+  color: #fff;
+  box-shadow: 3px 3px 0 0 #4a0d1d;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+  font-size: 10px;
+  padding: 8px 16px;
+}
+.utd-btn-hot:hover:not(:disabled) {
+  background: #ff5c8a;
+}
+.utd-btn-hot:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 0 #4a0d1d;
+}
+
+.utd-btn-cool {
+  font-family: var(--font-press-start-2p), "Press Start 2P", ui-monospace, monospace;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--cool);
+  background: var(--cool);
+  color: #04141e;
+  box-shadow: 3px 3px 0 0 #092738;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+  font-size: 10px;
+  padding: 8px 16px;
+}
+.utd-btn-cool:hover:not(:disabled) {
+  background: #5cd3ff;
+}
+.utd-btn-cool:active:not(:disabled) {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 0 #092738;
+}
+
+.utd-live {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  background: var(--acid);
+  box-shadow: 0 0 9px var(--acid);
+  animation: utd-breathe 2.4s ease-in-out infinite;
+}
+
+@keyframes utd-breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.utd-screen {
+  position: relative;
+}
+.utd-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0) 0px,
+    rgba(0, 0, 0, 0) 2px,
+    rgba(0, 0, 0, 0.22) 3px,
+    rgba(0, 0, 0, 0.22) 4px
+  );
+  mix-blend-mode: multiply;
+}
+
+.utd-dot-grid {
+  background-image: radial-gradient(
+    rgba(43, 232, 132, 0.07) 1px,
+    transparent 1px
+  );
+  background-size: 22px 22px;
+}
+

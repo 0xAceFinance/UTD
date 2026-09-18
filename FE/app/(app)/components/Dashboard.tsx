@@ -1,25 +1,27 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Zap, Swords, Trophy, Plus, User, ArrowUpDown } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ArrowUpDown, Plus, User } from "lucide-react"
 import Link from "next/link"
-import { useEffect, useState } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { useWallet } from "@/hooks/useWallet"
 import { joinDuelOnChain } from "@/lib/duelContract"
 import { SideTag, StatusTag, TierBadge } from "./duel/SideTag"
-import { DuelDTO, DuelStatus, DuelTokenDTO, formatRelativeTime, formatUsd } from "./duel/types"
+import { DuelDTO, DuelStatus, DuelTokenDTO, formatRelativeTime, formatUsd, pctReturn } from "./duel/types"
 
 const STATUS_TABS: { label: string; value: DuelStatus | "ALL" }[] = [
-    { label: "All", value: "ALL" },
     { label: "Open", value: "OPEN" },
     { label: "Live", value: "LIVE" },
     { label: "Settled", value: "SETTLED" },
+    { label: "All", value: "ALL" },
 ]
+
+/** Shared column template for the desktop lobby table (header + rows). */
+const LOBBY_COLS = "md:grid-cols-[96px_minmax(0,1fr)_64px_64px_56px_184px]"
+
+const fmtPct = (n: number) => `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`
 
 export default function Dashboard() {
     const router = useRouter()
@@ -61,6 +63,11 @@ export default function Dashboard() {
         }
         load()
     }, [])
+
+    // The "Mine" toggle is hidden without a wallet, so don't leave it stuck on.
+    useEffect(() => {
+        if (!connected) setMineOnly(false)
+    }, [connected])
 
     useEffect(() => {
         if (mineOnly && !address) {
@@ -141,268 +148,342 @@ export default function Dashboard() {
         }
     }
 
+    const me = address?.toLowerCase()
+
     return (
-        <div className="animate-in fade-in duration-500 space-y-10">
-            <header className="flex justify-center pt-4">
-                <div className="text-center">
-                    <h1 className="text-3xl md:text-5xl text-primary glow-text">Underground Token Duel</h1>
-                    <p className="mt-4 text-base md:text-lg text-muted-foreground">
-                        Pick a side. Lock a stake. Whoever pumps harder wins.
-                    </p>
-                </div>
-            </header>
+        <div className="space-y-6 lg:space-y-8">
+            {/* Stats */}
+            <dl className="grid grid-cols-3 gap-px border border-[var(--line)] bg-[var(--line)]">
+                <Stat label="Live now" value={loading ? "–" : String(liveCount)} accent live={liveCount > 0} />
+                <Stat label="Open" value={loading ? "–" : String(openCount)} />
+                <Stat
+                    label="Your points"
+                    value={!connected ? "–" : combatRecord ? combatRecord.totalPoints.toLocaleString() : "0"}
+                    badge={connected && combatRecord ? <TierBadge tier={combatRecord.tier as any} /> : undefined}
+                />
+            </dl>
 
-            <section className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                <Card className="p-6 text-center">
-                    <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center border-2 border-primary/30 bg-primary/10">
-                        <Swords className="h-5 w-5 text-primary" />
-                    </div>
-                    <CardTitle className="text-primary">Live Duels</CardTitle>
-                    <CardDescription className="mb-6 mt-2">Battles in progress right now</CardDescription>
-                    {loading ? (
-                        <Skeleton className="mx-auto h-10 w-16 rounded-none" />
-                    ) : (
-                        <div className="tabular text-5xl font-extrabold text-primary glow-text">{liveCount}</div>
-                    )}
-                </Card>
-
-                <Card className="p-6 text-center">
-                    <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center border-2 border-primary/30 bg-primary/10">
-                        <Zap className="h-5 w-5 text-primary" />
-                    </div>
-                    <CardTitle className="text-primary">Open Lobbies</CardTitle>
-                    <CardDescription className="mb-6 mt-2">Waiting for an opponent</CardDescription>
-                    {loading ? (
-                        <Skeleton className="mx-auto h-10 w-16 rounded-none" />
-                    ) : (
-                        <div className="tabular text-5xl font-extrabold text-primary glow-text">{openCount}</div>
-                    )}
-                </Card>
-
-                <Card className="p-6 text-center">
-                    <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center border-2 border-primary/30 bg-primary/10">
-                        <Trophy className="h-5 w-5 text-primary" />
-                    </div>
-                    <CardTitle className="text-primary">Your Combat Record</CardTitle>
-                    <CardDescription className="mb-6 mt-2">Lifetime points and tier</CardDescription>
-                    {!connected ? (
-                        <p className="text-sm text-muted-foreground">Connect your wallet to see your record.</p>
-                    ) : combatRecord ? (
-                        <div className="flex items-center justify-center gap-3">
-                            <TierBadge tier={combatRecord.tier as any} />
-                            <span className="tabular text-xl font-extrabold text-primary">{combatRecord.totalPoints.toLocaleString()} PTS</span>
-                        </div>
-                    ) : (
-                        <p className="text-sm text-muted-foreground">No duels fought yet.</p>
-                    )}
-                </Card>
-            </section>
-
+            {/* Fighters strip. Horizontal at every size so the lobby list always
+                gets the full width for its columns. */}
             <section>
-                <h2 className="font-pixel mb-4 text-xs uppercase tracking-wider text-muted-foreground">Today's Top 10</h2>
-                <div className="flex gap-3 overflow-x-auto pb-3">
+                <div className="mb-2.5 flex items-center justify-between">
+                    <h2 className="app-section-label">Top fighters</h2>
+                    <Link href="/tokens" className="text-[13px] font-semibold text-[var(--dim)] hover:text-[var(--acid)]">
+                        See all
+                    </Link>
+                </div>
+                <div className="no-scrollbar -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-2 overflow-x-auto px-4 sm:-mx-6 sm:scroll-px-6 sm:px-6 lg:mx-0 lg:scroll-px-0 lg:px-0">
                     {loading
-                        ? Array.from({ length: 6 }).map((_, i) => (
-                              <Skeleton key={i} className="h-[84px] min-w-[120px] flex-none rounded-none" />
+                        ? Array.from({ length: 4 }).map((_, i) => (
+                              <div key={i} className="app-card h-[76px] w-36 flex-none animate-pulse" />
                           ))
-                        : tokens.map((t) => (
-                              <Card key={t._id} className="interactive min-w-[120px] flex-none cursor-default p-3 text-center">
-                                  <div className="text-sm font-bold text-primary">{t.symbol}</div>
-                                  <div
-                                      className={`tabular mt-1 text-xs font-semibold ${t.change24hPct >= 0 ? "text-[hsl(var(--good))]" : "text-destructive"}`}
-                                  >
-                                      {t.change24hPct >= 0 ? "+" : ""}
-                                      {t.change24hPct}%
+                        : tokens.slice(0, 8).map((t) => (
+                              <div
+                                  key={t._id}
+                                  className="app-card w-36 flex-none snap-start p-3 lg:w-auto lg:min-w-[132px] lg:flex-1"
+                              >
+                                  <div className="flex items-baseline justify-between gap-2">
+                                      <span className="utd-pixel truncate text-[10px] text-white">{t.symbol}</span>
+                                      <span className="font-mono text-[10px] text-[var(--faint)]">#{t.rank}</span>
                                   </div>
-                                  <div className="mt-1 text-[11px] text-muted-foreground">{formatUsd(t.marketCapUsd)} MC</div>
-                              </Card>
+                                  <div className="mt-2.5 flex items-baseline justify-between gap-2 font-mono text-[12px]">
+                                      <Change pct={t.change24hPct} />
+                                      <span className="text-[var(--dim)]">{formatUsd(t.marketCapUsd)}</span>
+                                  </div>
+                              </div>
                           ))}
                 </div>
             </section>
 
-            <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0">
-                    <div>
-                        <CardTitle className="text-primary">Lobbies</CardTitle>
-                        <CardDescription className="mt-2">Pick a side and lock in your stake, or watch any battle</CardDescription>
-                    </div>
-                    <Link href="/duels/create">
-                        <Button className="gap-2">
-                            <Plus className="h-4 w-4" />
-                            Create Duel
-                        </Button>
-                    </Link>
-                </CardHeader>
-                <CardContent>
-                    <div className="mb-4 flex flex-wrap items-center gap-2">
-                        <div className="flex flex-wrap gap-2">
-                            {STATUS_TABS.map((tab) => (
-                                <Button
-                                    key={tab.value}
-                                    size="sm"
-                                    variant={statusFilter === tab.value ? "default" : "outline"}
-                                    onClick={() => setStatusFilter(tab.value)}
-                                >
-                                    {tab.label}
-                                </Button>
-                            ))}
-                        </div>
-                        <div className="ml-auto flex flex-wrap gap-2">
-                            <Button
-                                size="sm"
-                                variant={mineOnly ? "default" : "outline"}
-                                disabled={!connected}
-                                onClick={() => setMineOnly((v) => !v)}
-                                className="gap-1.5"
-                                title={connected ? "Show only lobbies you created or joined" : "Connect your wallet to filter by your lobbies"}
+            {/* Lobbies */}
+            <section>
+                <div className="mb-3 flex items-stretch gap-2">
+                    <div className="app-seg min-w-0 flex-1 sm:flex-none" role="group" aria-label="Filter by status">
+                        {STATUS_TABS.map((tab) => (
+                            <button
+                                key={tab.value}
+                                aria-pressed={statusFilter === tab.value}
+                                onClick={() => setStatusFilter(tab.value)}
                             >
-                                <User className="h-3.5 w-3.5" />
-                                My Lobbies
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setSortOrder((s) => (s === "newest" ? "oldest" : "newest"))}
-                                className="gap-1.5"
-                            >
-                                <ArrowUpDown className="h-3.5 w-3.5" />
-                                {sortOrder === "newest" ? "Newest" : "Oldest"}
-                            </Button>
-                        </div>
+                                {tab.label}
+                            </button>
+                        ))}
                     </div>
 
-                    {lobbiesLoading ? (
-                        <div className="space-y-4">
-                            {Array.from({ length: 3 }).map((_, i) => (
-                                <Skeleton key={i} className="h-[68px] w-full rounded-none" />
-                            ))}
-                        </div>
-                    ) : browseLobbies.length === 0 ? (
-                        <div className="flex flex-col items-center gap-3 py-10 text-center">
-                            <Swords className="h-8 w-8 text-muted-foreground/50" />
-                            <p className="text-muted-foreground">
-                                {mineOnly && !connected
-                                    ? "Connect your wallet to see your lobbies."
-                                    : mineOnly
-                                      ? "You haven't created or joined a lobby yet."
-                                      : statusFilter === "OPEN"
-                                        ? "No open lobbies right now. Be the first to create one."
-                                        : "No lobbies match this filter."}
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="space-y-3">
-                            {browseLobbies.map((l) => {
-                                const isMyOpenLobby = l.status === "OPEN" && l.creatorWallet === address?.toLowerCase()
-                                return (
-                                    <div
-                                        key={l._id}
-                                        className="flex flex-wrap items-center justify-between gap-4 border-2 border-primary/15 bg-secondary/40 p-4 transition-colors hover:border-primary/40 hover:bg-secondary/60"
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <StatusTag status={l.status} />
-                                            <SideTag side="A" label={l.tokenA.symbol} />
-                                            <span className="text-sm text-muted-foreground">vs</span>
-                                            <SideTag side="B" label={l.tokenB.symbol} />
-                                        </div>
-                                        <div className="flex items-center gap-6">
-                                            <div className="text-center">
-                                                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Buy-in</div>
-                                                <div className="tabular text-sm font-semibold">${l.buyInUsd}</div>
-                                            </div>
-                                            <div className="text-center">
-                                                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Duration</div>
-                                                <div className="tabular text-sm font-semibold">{Math.round(l.durationSeconds / 60)} min</div>
-                                            </div>
-                                            <div className="text-center">
-                                                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Created</div>
-                                                <div className="tabular text-sm font-semibold">{formatRelativeTime(l.createdAt)}</div>
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                <Link href={`/duels/${l._id}`}>
-                                                    <Button variant="outline" size="sm">
-                                                        View
-                                                    </Button>
-                                                </Link>
-                                                {l.status === "OPEN" && !isMyOpenLobby && (
-                                                    <Button
-                                                        variant="outline"
-                                                        size="sm"
-                                                        disabled={joiningId === l._id}
-                                                        onClick={() => openJoinConfirm(l)}
-                                                    >
-                                                        {joiningId === l._id ? "Joining…" : "Join Duel"}
-                                                    </Button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )
-                            })}
-                        </div>
+                    {/* "Mine" only exists once there is a wallet to filter by,
+                        rather than sitting there disabled. */}
+                    {connected && (
+                        <button
+                            onClick={() => setMineOnly((v) => !v)}
+                            aria-pressed={mineOnly}
+                            aria-label="Only my duels"
+                            title="Only my duels"
+                            className="app-chip justify-center px-3 sm:ml-auto"
+                        >
+                            <User className="h-4 w-4" />
+                            <span className="hidden sm:inline">Mine</span>
+                        </button>
                     )}
-                </CardContent>
-            </Card>
+                    <button
+                        onClick={() => setSortOrder((s) => (s === "newest" ? "oldest" : "newest"))}
+                        aria-label={sortOrder === "newest" ? "Sorted newest first" : "Sorted oldest first"}
+                        title={sortOrder === "newest" ? "Newest first" : "Oldest first"}
+                        className={`app-chip justify-center px-3 ${connected ? "" : "sm:ml-auto"}`}
+                    >
+                        <ArrowUpDown className="h-4 w-4" />
+                        <span className="hidden sm:inline">{sortOrder === "newest" ? "Newest" : "Oldest"}</span>
+                    </button>
+                </div>
 
+                {/* Column headings, desktop only; rows are self-labelling on phones. */}
+                {!lobbiesLoading && browseLobbies.length > 0 && (
+                    <div
+                        className={`hidden gap-4 px-4 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--faint)] md:grid ${LOBBY_COLS}`}
+                    >
+                        <span>Status</span>
+                        <span>Match</span>
+                        <span>Stake</span>
+                        <span>Pot</span>
+                        <span>Round</span>
+                        <span />
+                    </div>
+                )}
+
+                {lobbiesLoading ? (
+                    <div className="space-y-2">
+                        {Array.from({ length: 3 }).map((_, i) => (
+                            <div key={i} className="app-card h-[132px] animate-pulse md:h-[68px]" />
+                        ))}
+                    </div>
+                ) : browseLobbies.length === 0 ? (
+                    <div className="app-card flex flex-col items-center px-6 py-12 text-center">
+                        <p className="max-w-xs text-[14px] text-[var(--dim)]">
+                            {mineOnly
+                                ? "You haven't created or joined a duel yet."
+                                : statusFilter === "OPEN"
+                                  ? "No open challenges right now."
+                                  : "Nothing matches this filter."}
+                        </p>
+                        <Link href="/duels/create" className="utd-btn mt-5 gap-2 px-4 py-3 text-[9px]">
+                            <Plus className="h-3.5 w-3.5" />
+                            NEW DUEL
+                        </Link>
+                    </div>
+                ) : (
+                    <ul className="space-y-2">
+                        {browseLobbies.map((l) => (
+                            <LobbyRow
+                                key={l._id}
+                                lobby={l}
+                                me={me}
+                                joining={joiningId === l._id}
+                                onJoin={() => openJoinConfirm(l)}
+                            />
+                        ))}
+                    </ul>
+                )}
+            </section>
+
+            {/* Join confirmation */}
             <Dialog open={pendingJoin !== null} onOpenChange={(open) => !open && setPendingJoin(null)}>
-                <DialogContent>
-                    {pendingJoin && (() => {
-                        const opponentSide: 0 | 1 = pendingJoin.creatorSide === 0 ? 1 : 0
-                        const mySymbol = opponentSide === 0 ? pendingJoin.tokenA.symbol : pendingJoin.tokenB.symbol
-                        const pot = pendingJoin.buyInUsd * 2
-                        const winAmount = Math.round(pot * 0.8)
-                        return (
-                            <>
-                                <DialogHeader>
-                                    <DialogTitle>Join Duel</DialogTitle>
-                                </DialogHeader>
+                <DialogContent className="app-root w-[calc(100vw-2rem)] max-w-md rounded-none border border-[var(--line-2)] bg-[var(--s1)] p-5 text-[var(--txt)] sm:p-6">
+                    {pendingJoin &&
+                        (() => {
+                            const mySide: 0 | 1 = pendingJoin.creatorSide === 0 ? 1 : 0
+                            const myToken = mySide === 0 ? pendingJoin.tokenA : pendingJoin.tokenB
+                            const theirToken = mySide === 0 ? pendingJoin.tokenB : pendingJoin.tokenA
+                            const pot = pendingJoin.buyInUsd * 2
+                            const winAmount = Math.round(pot * 0.8)
+                            const busy = joiningId === pendingJoin._id
 
-                                <div className="flex items-center justify-center gap-3 border-2 border-border/40 bg-secondary/40 p-4">
-                                    <SideTag side="A" label={pendingJoin.tokenA.symbol} />
-                                    <Swords className="h-4 w-4 flex-none text-primary/60" />
-                                    <SideTag side="B" label={pendingJoin.tokenB.symbol} />
-                                </div>
+                            return (
+                                <>
+                                    <DialogHeader className="text-left">
+                                        <DialogTitle className="utd-pixel text-[12px] text-white">JOIN DUEL</DialogTitle>
+                                        <DialogDescription className="text-[13px] text-[var(--dim)]">
+                                            Your ${pendingJoin.buyInUsd} stake goes into this match&apos;s escrow.
+                                        </DialogDescription>
+                                    </DialogHeader>
 
-                                <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-                                    You will be placed on{" "}
-                                    <strong className={opponentSide === 0 ? "text-[hsl(var(--side-a))]" : "text-[hsl(var(--side-b))]"}>
-                                        Side {opponentSide === 0 ? "A" : "B"} &middot; {mySymbol}
-                                    </strong>
-                                    . Stake locks immediately, no selling until the duel ends.
-                                </p>
-
-                                <div className="mt-4 flex gap-2">
-                                    <div className="flex-1 border-2 border-border/35 py-2.5 text-center">
-                                        <div className="text-[9px] uppercase tracking-wide text-muted-foreground">Total Pot</div>
-                                        <div className="tabular text-base font-bold">${pot}</div>
+                                    <div className="mt-2 grid grid-cols-2 gap-px bg-[var(--line)]">
+                                        <div className="bg-[var(--s2)] p-3.5">
+                                            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--faint)]">
+                                                You play
+                                            </div>
+                                            <div className="mt-2">
+                                                <SideTag side={mySide === 0 ? "A" : "B"} label={myToken.symbol} />
+                                            </div>
+                                        </div>
+                                        <div className="bg-[var(--s2)] p-3.5">
+                                            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--faint)]">
+                                                Against
+                                            </div>
+                                            <div className="mt-2">
+                                                <SideTag side={mySide === 0 ? "B" : "A"} label={theirToken.symbol} />
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="flex-1 border-2 border-border/35 py-2.5 text-center">
-                                        <div className="text-[9px] uppercase tracking-wide text-muted-foreground">If You Win</div>
-                                        <div className="tabular text-base font-bold text-[hsl(var(--good))]">${winAmount}</div>
-                                    </div>
-                                    <div className="flex-1 border-2 border-border/35 py-2.5 text-center">
-                                        <div className="text-[9px] uppercase tracking-wide text-muted-foreground">If You Lose</div>
-                                        <div className="text-base font-bold text-muted-foreground">$0+pts</div>
-                                    </div>
-                                </div>
 
-                                <DialogFooter>
-                                    <Button variant="ghost" onClick={() => setPendingJoin(null)}>
-                                        Cancel
-                                    </Button>
-                                    <Button
-                                        variant={opponentSide === 0 ? "sideA" : "sideB"}
-                                        disabled={joiningId === pendingJoin._id}
-                                        onClick={() => handleJoin()}
-                                    >
-                                        {joiningId === pendingJoin._id ? "Joining…" : "Confirm & Join"}
-                                    </Button>
-                                </DialogFooter>
-                            </>
-                        )
-                    })()}
+                                    <dl className="mt-3 space-y-2 font-mono text-[13px]">
+                                        <Row k="Stake" v={`$${pendingJoin.buyInUsd}`} />
+                                        <Row k="Pot" v={`$${pot}`} />
+                                        <Row k="Round" v={`${Math.round(pendingJoin.durationSeconds / 60)} min`} />
+                                        <Row k="If you win (80%)" v={`$${winAmount}`} accent />
+                                    </dl>
+
+                                    <div className="mt-5 grid grid-cols-2 gap-2.5">
+                                        <button onClick={() => setPendingJoin(null)} className="app-chip h-11 justify-center">
+                                            Cancel
+                                        </button>
+                                        <button disabled={busy} onClick={() => handleJoin()} className="utd-btn h-11 text-[9px]">
+                                            {busy ? "JOINING…" : "CONFIRM"}
+                                        </button>
+                                    </div>
+                                </>
+                            )
+                        })()}
                 </DialogContent>
             </Dialog>
+        </div>
+    )
+}
+
+function Stat({
+    label,
+    value,
+    accent,
+    live,
+    badge,
+}: {
+    label: string
+    value: string
+    accent?: boolean
+    live?: boolean
+    badge?: ReactNode
+}) {
+    return (
+        <div className="min-w-0 bg-[var(--s1)] px-3 py-3.5 sm:px-5 sm:py-4">
+            <dt className="flex items-center gap-1.5 truncate text-[11px] font-semibold uppercase tracking-[0.1em] text-[var(--faint)] sm:text-[12px]">
+                {live && <span className="utd-live h-1.5 w-1.5" />}
+                {label}
+            </dt>
+            <dd className="mt-2 flex flex-wrap items-center gap-2">
+                <span className={`utd-pixel truncate text-[14px] sm:text-[18px] ${accent ? "text-[var(--acid)]" : "text-white"}`}>
+                    {value}
+                </span>
+                {badge}
+            </dd>
+        </div>
+    )
+}
+
+function Change({ pct }: { pct: number }) {
+    return <span className={pct >= 0 ? "text-[var(--acid)]" : "text-[var(--hot)]"}>{fmtPct(pct)}</span>
+}
+
+function Row({ k, v, accent }: { k: string; v: string; accent?: boolean }) {
+    return (
+        <div className="flex justify-between">
+            <dt className={accent ? "text-[var(--acid)]" : "text-[var(--faint)]"}>{k}</dt>
+            <dd className={accent ? "text-[var(--acid)]" : "text-[var(--txt)]"}>{v}</dd>
+        </div>
+    )
+}
+
+/**
+ * One lobby. Phones get a stacked card with full-width, 44px actions; from md
+ * up the same markup becomes a table row via `md:grid` + `md:contents`.
+ */
+function LobbyRow({
+    lobby: l,
+    me,
+    joining,
+    onJoin,
+}: {
+    lobby: DuelDTO
+    me?: string
+    joining: boolean
+    onJoin: () => void
+}) {
+    const isMine = Boolean(me) && (l.creatorWallet === me || l.opponentWallet === me)
+    const isMyOpenLobby = l.status === "OPEN" && l.creatorWallet === me
+    const canJoin = l.status === "OPEN" && !isMyOpenLobby
+    const started = l.status !== "OPEN" && l.status !== "EXPIRED" && l.status !== "CANCELLED"
+
+    const side = (idx: 0 | 1) => {
+        const t = idx === 0 ? l.tokenA : l.tokenB
+        let note: ReactNode = null
+        if (started) {
+            const pct = pctReturn(t.startMarketCapUsd, t.currentMarketCapUsd)
+            note = (
+                <>
+                    <Change pct={Number.isFinite(pct) ? pct : 0} />
+                    {l.status === "SETTLED" && l.winnerSide === idx && <span className="ml-1.5 text-[var(--acid)]">won</span>}
+                </>
+            )
+        } else if (l.status === "OPEN") {
+            note =
+                l.creatorSide === idx ? (
+                    <span className="text-[var(--dim)]">
+                        {l.creatorWallet === me ? "You" : `${l.creatorWallet.slice(0, 6)}…`}
+                    </span>
+                ) : (
+                    <span className="text-[var(--acid)]">Open slot</span>
+                )
+        }
+        return (
+            <div className="min-w-0">
+                <SideTag side={idx === 0 ? "A" : "B"} label={t.symbol} />
+                <div className="mt-1 font-mono text-[12px]">{note}</div>
+            </div>
+        )
+    }
+
+    return (
+        <li
+            className={`app-card flex flex-col gap-3.5 p-4 md:grid md:items-center md:gap-4 md:py-3 ${LOBBY_COLS} ${
+                isMine ? "border-l-2 border-l-[var(--acid)]" : ""
+            }`}
+        >
+            <div className="flex items-center justify-between md:flex-col md:items-start md:gap-1">
+                <StatusTag status={l.status} />
+                <span className="font-mono text-[11px] text-[var(--faint)]">{formatRelativeTime(l.createdAt)}</span>
+            </div>
+
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 md:grid-cols-[minmax(0,120px)_auto_minmax(0,120px)] md:gap-4">
+                {side(0)}
+                <span className="font-mono text-[11px] text-[var(--faint)]">vs</span>
+                <div className="text-right md:text-left">{side(1)}</div>
+            </div>
+
+            <dl className="grid grid-cols-3 gap-px bg-[var(--line)] font-mono text-[13px] md:contents">
+                <Meta k="Stake" v={`$${l.buyInUsd}`} />
+                <Meta k="Pot" v={`$${l.buyInUsd * 2}`} accent />
+                <Meta k="Round" v={`${Math.round(l.durationSeconds / 60)}m`} />
+            </dl>
+
+            <div className={`grid gap-2 ${canJoin ? "grid-cols-[1fr_1.4fr]" : "grid-cols-1"} md:flex md:justify-end`}>
+                <Link href={`/duels/${l._id}`} className="app-chip h-11 justify-center md:h-9">
+                    {started ? "Watch" : "View"}
+                </Link>
+                {canJoin && (
+                    <button disabled={joining} onClick={onJoin} className="utd-btn h-11 px-4 text-[9px] md:h-9">
+                        {joining ? "JOINING…" : "JOIN"}
+                    </button>
+                )}
+                {isMyOpenLobby && (
+                    <span className="hidden items-center text-[12px] text-[var(--faint)] md:flex">Your lobby</span>
+                )}
+            </div>
+        </li>
+    )
+}
+
+function Meta({ k, v, accent }: { k: string; v: string; accent?: boolean }) {
+    return (
+        <div className="bg-[var(--s1)] py-2 text-center md:bg-transparent md:py-0 md:text-left">
+            <dt className="text-[10px] uppercase tracking-[0.1em] text-[var(--faint)] md:hidden">{k}</dt>
+            <dd className={`mt-0.5 md:mt-0 ${accent ? "text-[var(--acid)]" : "text-[var(--txt)]"}`}>{v}</dd>
         </div>
     )
 }

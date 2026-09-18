@@ -1,46 +1,57 @@
 "use client"
 
-import { Swords, List, User } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { cn } from "@/lib/utils"
-import { LogoMark } from "./Logo"
+import { Plus } from "lucide-react"
+import { NAV, isActive } from "./nav"
 
-const navItems = [
-  { icon: Swords, label: "duels", href: "/" },
-  { icon: List, label: "tokens", href: "/tokens" },
-  { icon: User, label: "profile", href: "/profile" },
-]
-
+/**
+ * Desktop navigation (lg and up). Below lg the same NAV renders as the bottom
+ * tab bar in BottomNav, so there is always exactly one way to navigate.
+ */
 export default function Sidebar() {
-  const pathname = usePathname()
+    const pathname = usePathname()
+    const creating = pathname.startsWith("/duels/create")
 
-  return (
-    <aside className="border-r border-border/50 bg-gradient-to-b from-card/90 to-card/70 backdrop-blur-md supports-[backdrop-filter]:bg-card/50 lg:block lg:w-24">
-      <div className="flex h-full flex-col">
-        <div className="flex h-16 items-center justify-center border-b border-border/50">
-          <Link href="/">
-            <LogoMark className="h-7 w-7" />
-          </Link>
-        </div>
-        <nav className="flex-1 space-y-2 p-2 cyber-grid">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "group flex flex-col items-center gap-y-1 rounded-lg p-2 text-sm font-medium transition-all duration-200",
-                (item.href === "/" ? pathname === "/" || pathname.startsWith("/duels") : pathname.startsWith(item.href))
-                  ? "bg-primary/20 text-primary glow-text border border-primary/30"
-                  : "hover:bg-primary/20 hover:text-primary hover:scale-105 hover:border hover:border-primary/30",
-              )}
-            >
-              <item.icon className="h-5 w-5" />
-              <span className="font-pixel text-[10px] tracking-wide">{item.label}</span>
+    return (
+        <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-[var(--line)] bg-[var(--s1)] lg:flex">
+            <Link href="/duels" className="flex h-16 items-center gap-3 border-b border-[var(--line)] px-5">
+                <img src="/logo-mark.png" alt="" className="utd-mark h-8 w-8" />
+                <span className="utd-pixel text-[12px] text-white">UTD</span>
             </Link>
-          ))}
-        </nav>
-      </div>
-    </aside>
-  )
+
+            <div className="p-4">
+                <Link
+                    href="/duels/create"
+                    className={`utd-btn w-full gap-2 py-3 text-[9px] ${creating ? "pointer-events-none opacity-60" : ""}`}
+                    aria-current={creating ? "page" : undefined}
+                >
+                    <Plus className="h-3.5 w-3.5" />
+                    NEW DUEL
+                </Link>
+            </div>
+
+            <nav className="flex-1 space-y-0.5 px-3" aria-label="Main">
+                {NAV.map((item) => {
+                    const active = isActive(item, pathname)
+                    const Icon = item.icon
+                    return (
+                        <Link
+                            key={item.href}
+                            href={item.href}
+                            aria-current={active ? "page" : undefined}
+                            className={`app-nav-item ${active ? "is-active" : ""}`}
+                        >
+                            <Icon className="h-4 w-4 flex-none" />
+                            {item.label}
+                        </Link>
+                    )
+                })}
+            </nav>
+
+            <div className="border-t border-[var(--line)] px-5 py-4 font-mono text-[11px] text-[var(--faint)]">
+                Pre-launch build
+            </div>
+        </aside>
+    )
 }

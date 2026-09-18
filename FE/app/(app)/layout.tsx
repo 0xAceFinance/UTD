@@ -1,20 +1,23 @@
 import type React from "react"
+import "./app.css"
 import Header from "./components/Header"
 import Sidebar from "./components/Sidebar"
+import BottomNav from "./components/BottomNav"
 
-/** The app shell (sidebar + header) for every connected-app route: dashboard, duels, tokens, profile. */
-export default function AppLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen">
+    <div className="utd app-root min-h-screen selection:bg-[var(--acid)]/25">
       <Sidebar />
-      <div className="flex flex-col flex-1">
+
+      <div className="lg:pl-60">
         <Header />
-        <main className="flex-1 p-6">{children}</main>
+        {/* Bottom padding clears the fixed tab bar (+ home indicator) on phones. */}
+        <main className="mx-auto max-w-6xl px-4 pt-5 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 lg:px-8 lg:pt-8 lg:pb-16">
+          {children}
+        </main>
       </div>
+
+      <BottomNav />
     </div>
   )
 }

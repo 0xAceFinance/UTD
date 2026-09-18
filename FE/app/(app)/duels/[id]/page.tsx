@@ -2,9 +2,6 @@
 
 import { useEffect, useState, useCallback } from "react"
 import { useParams } from "next/navigation"
-import { Card, CardContent } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
     AlertDialog,
     AlertDialogAction,
@@ -16,7 +13,8 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
-import { ShieldCheck, Trophy, Swords, Twitter } from "lucide-react"
+import { ShieldCheck, Trophy, Twitter, AlertTriangle, ArrowLeft } from "lucide-react"
+import Link from "next/link"
 import { toast } from "sonner"
 import { useWallet } from "@/hooks/useWallet"
 import { cancelDuelOnChain, expireDuelOnChain, settleDuelOnChain } from "@/lib/duelContract"
@@ -28,10 +26,10 @@ function buildShareIntent(duel: DuelDTO, myResult: "won" | "lost" | null): strin
     const loserSymbol = duel.winnerSide === 0 ? duel.tokenB.symbol : duel.tokenA.symbol
     const text =
         myResult === "won"
-            ? `I just won a duel on Underground Token Duel. ${winnerSymbol} beat ${loserSymbol} and earned me ${duel.winnerPoints} pts.`
+            ? `I won my duel on @mcapduel. ${winnerSymbol} outperformed ${loserSymbol}.`
             : myResult === "lost"
-              ? `Just battled it out on Underground Token Duel. ${winnerSymbol} beat ${loserSymbol} in my duel.`
-              : `${winnerSymbol} beat ${loserSymbol} in today's Underground Token Duel arena.`
+              ? `Battled on @mcapduel. ${winnerSymbol} vs ${loserSymbol}.`
+              : `${winnerSymbol} defeated ${loserSymbol} in today's @mcapduel.`
     const url = typeof window !== "undefined" ? `${window.location.origin}/duels/${duel._id}` : ""
     return `https://twitter.com/intent/tweet?${new URLSearchParams({ text, url }).toString()}`
 }
@@ -87,17 +85,16 @@ export default function DuelDetailPage() {
             const json = await res.json()
             if (!json.success) toast.error(json.error)
             else {
-                toast.success("Lobby cancelled. Your stake was refunded.")
+                toast.success("Duel cancelled. Your stake was refunded.")
                 setDuel(json.data)
             }
         } catch (err) {
-            toast.error((err as Error).message || "Something went wrong cancelling the lobby.")
+            toast.error((err as Error).message || "Something went wrong cancelling the duel.")
         } finally {
             setCancelling(false)
         }
     }
 
-    /** Permissionless on the real contract -- anyone can trigger reclaiming the creator's stake once the open window passes. */
     async function handleReclaim() {
         if (!duel) return
         setReclaiming(true)
@@ -114,7 +111,7 @@ export default function DuelDetailPage() {
             const json = await res.json()
             if (!json.success) toast.error(json.error)
             else {
-                toast.success("Lobby expired. The creator's stake was refunded.")
+                toast.success("Duel expired. The creator's stake was refunded.")
                 setDuel(json.data)
             }
         } catch (err) {
@@ -124,7 +121,6 @@ export default function DuelDetailPage() {
         }
     }
 
-    /** Permissionless on the real contract -- anyone holding the oracle's signature can submit it. */
     async function handleClaimSettlement() {
         if (!duel || duel.winnerSide === undefined || !duel.oracleSignature) return
         setClaiming(true)
@@ -142,7 +138,7 @@ export default function DuelDetailPage() {
             const json = await res.json()
             if (!json.success) toast.error(json.error)
             else {
-                toast.success("Settled. Funds have moved.")
+                toast.success("Settled. Escrow distributed.")
                 setDuel(json.data)
             }
         } catch (err) {
@@ -157,11 +153,11 @@ export default function DuelDetailPage() {
 
     if (!duel) {
         return (
-            <div className="mx-auto max-w-4xl space-y-6">
-                <Skeleton className="mx-auto h-12 w-40 rounded-none" />
+            <div className="space-y-6 pt-10 text-center">
+                <div className="h-8 w-48 bg-[var(--s1)] mx-auto animate-pulse" />
                 <div className="grid gap-6 md:grid-cols-2">
-                    <Skeleton className="h-64 rounded-none" />
-                    <Skeleton className="h-64 rounded-none" />
+                    <div className="h-64 bg-[var(--s1)] border border-[var(--line)] animate-pulse" />
+                    <div className="h-64 bg-[var(--s1)] border border-[var(--line)] animate-pulse" />
                 </div>
             </div>
         )
@@ -175,82 +171,113 @@ export default function DuelDetailPage() {
         const urgent = openCountdown.totalSec < 300
         const deadlinePassed = openCountdown.totalSec <= 0
         return (
-            <div className="animate-in fade-in duration-500 mx-auto max-w-xl pt-6">
-                <Card className="text-center">
-                    <CardContent className="space-y-6 pt-8">
-                        <div className="flex items-center justify-center gap-3">
-                            <SideTag side="A" label={duel.tokenA.symbol} />
-                            <span className="text-muted-foreground">vs</span>
-                            <SideTag side="B" label={duel.tokenB.symbol} />
+            <div className="mx-auto max-w-xl space-y-4">
+                <Link href="/duels" className="inline-flex items-center gap-1.5 font-mono text-xs text-[var(--dim)] hover:text-white transition-colors mb-2">
+                    <ArrowLeft className="h-3.5 w-3.5" /> Back to Duels
+                </Link>
+
+                <div className="p-8 text-center bg-[var(--s1)] border border-[var(--line)]">
+                    <div className="flex items-center justify-center gap-3">
+                        <SideTag side="A" label={duel.tokenA.symbol} />
+                        <span className="font-mono text-xs text-[var(--faint)]">VS</span>
+                        <SideTag side="B" label={duel.tokenB.symbol} />
+                    </div>
+
+                    <div className="mt-8">
+                        <div className="font-mono text-[11px] text-[var(--faint)] uppercase tracking-wider">
+                            {deadlinePassed ? "Duel Expired" : "Awaiting Opponent"}
                         </div>
-                        <div>
-                            <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                                {deadlinePassed ? "Lobby expired" : "Waiting for an opponent"}
-                            </div>
-                            <div className={`tabular mt-2 text-4xl font-extrabold glow-text ${urgent ? "text-destructive" : "text-primary"}`}>
-                                {openCountdown.label}
-                            </div>
-                            <div className="mt-1 text-xs text-muted-foreground">
-                                {deadlinePassed ? "no one joined in time" : "lobby expires if no one joins"}
-                            </div>
+                        <div className={`utd-pixel mt-3 text-4xl sm:text-5xl ${urgent ? "text-[var(--hot)]" : "text-[var(--acid)]"}`}>
+                            {openCountdown.label}
                         </div>
-                        <div className="flex justify-center gap-6 text-sm">
-                            <div>
-                                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Buy-in</div>
-                                <div className="tabular font-semibold">${duel.buyInUsd}</div>
-                            </div>
-                            <div>
-                                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Duration</div>
-                                <div className="tabular font-semibold">{Math.round(duel.durationSeconds / 60)} min</div>
-                            </div>
+                        <div className="mt-2 utd-body text-xs text-[var(--dim)]">
+                            {deadlinePassed ? "No opponent joined before deadline." : "Stakes auto-refund if unmatched before expiration."}
                         </div>
+                    </div>
+
+                    <div className="mt-8 grid grid-cols-3 gap-px bg-[var(--line)]">
+                        <div className="bg-[var(--s0)] p-4">
+                            <div className="font-mono text-[10px] text-[var(--faint)]">BUY-IN</div>
+                            <div className="utd-pixel text-sm text-white mt-1.5">${duel.buyInUsd}</div>
+                        </div>
+                        <div className="bg-[var(--s0)] p-4">
+                            <div className="font-mono text-[10px] text-[var(--faint)]">TOTAL POT</div>
+                            <div className="utd-pixel text-sm text-[var(--acid)] mt-1.5">${duel.buyInUsd * 2}</div>
+                        </div>
+                        <div className="bg-[var(--s0)] p-4">
+                            <div className="font-mono text-[10px] text-[var(--faint)]">ROUND</div>
+                            <div className="font-mono text-sm text-white mt-1.5">{Math.round(duel.durationSeconds / 60)}m</div>
+                        </div>
+                    </div>
+
+                    <div className="mt-8 flex justify-center gap-3">
                         {deadlinePassed ? (
-                            <Button variant="outline" disabled={reclaiming} onClick={handleReclaim}>
-                                {reclaiming ? "Reclaiming…" : "Reclaim Stake"}
-                            </Button>
+                            <button
+                                disabled={reclaiming}
+                                onClick={handleReclaim}
+                                className="utd-btn text-[9px] py-2.5 px-6"
+                            >
+                                {reclaiming ? "RECLAIMING…" : "RECLAIM STAKE"}
+                            </button>
                         ) : isCreator ? (
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                    <Button variant="outline" disabled={cancelling}>
-                                        {cancelling ? "Cancelling…" : "Cancel Lobby"}
-                                    </Button>
+                                    <button
+                                        disabled={cancelling}
+                                        className="utd-btn-outline text-[9px] py-2 px-5 hover:border-[var(--hot)] hover:text-[var(--hot)]"
+                                    >
+                                        {cancelling ? "CANCELLING…" : "CANCEL DUEL"}
+                                    </button>
                                 </AlertDialogTrigger>
-                                <AlertDialogContent>
+                                <AlertDialogContent className="bg-[var(--s0)] border border-[var(--line)] text-white">
                                     <AlertDialogHeader>
-                                        <AlertDialogTitle>Cancel Lobby?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            Your stake will be fully refunded. This cannot be undone.
+                                        <AlertDialogTitle className="utd-pixel text-sm text-white">Cancel Duel?</AlertDialogTitle>
+                                        <AlertDialogDescription className="utd-body text-xs text-[var(--dim)]">
+                                            Your stake will be fully refunded from the escrow contract.
                                         </AlertDialogDescription>
                                     </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel>Never Mind</AlertDialogCancel>
-                                        <AlertDialogAction onClick={handleCancel}>Cancel Lobby</AlertDialogAction>
+                                    <AlertDialogFooter className="mt-4 flex gap-2">
+                                        <AlertDialogCancel className="utd-btn-outline text-[9px]">Keep Waiting</AlertDialogCancel>
+                                        <AlertDialogAction onClick={handleCancel} className="utd-btn-hot text-[9px]">
+                                            Confirm Cancel
+                                        </AlertDialogAction>
                                     </AlertDialogFooter>
                                 </AlertDialogContent>
                             </AlertDialog>
                         ) : (
-                            <p className="text-xs text-muted-foreground">Head to the home page to join this lobby.</p>
+                            <p className="utd-body text-xs text-[var(--dim)]">
+                                Return to Duels list to accept this challenge.
+                            </p>
                         )}
-                    </CardContent>
-                </Card>
+                    </div>
+                </div>
             </div>
         )
     }
 
     if (duel.status === "EXPIRED" || duel.status === "CANCELLED") {
         return (
-            <div className="animate-in fade-in duration-500 mx-auto max-w-xl pt-6 text-center">
-                <Card>
-                    <CardContent className="space-y-2 pt-8">
-                        <p className="text-lg font-bold">{duel.status === "EXPIRED" ? "This lobby expired" : "This lobby was cancelled"}</p>
-                        <p className="text-sm text-muted-foreground">The creator's stake was fully refunded.</p>
-                    </CardContent>
-                </Card>
+            <div className="mx-auto max-w-md pt-12 text-center">
+                <div className="p-8 bg-[var(--s1)] border border-[var(--line)]">
+                    <p className="utd-pixel text-sm text-white">
+                        {duel.status === "EXPIRED" ? "DUEL EXPIRED" : "DUEL CANCELLED"}
+                    </p>
+                    <p className="utd-body text-xs text-[var(--dim)] mt-2">
+                        Stakes have been refunded to the creator.
+                    </p>
+                    <div className="mt-6">
+                        <Link href="/duels">
+                            <button className="utd-btn text-[9px] py-2 px-5">
+                                &larr; BACK TO DUELS
+                            </button>
+                        </Link>
+                    </div>
+                </div>
             </div>
         )
     }
 
-    // LIVE, SETTLING, HELD, or SETTLED -- all share the battle view, frozen at final numbers once settled.
+    // LIVE, SETTLING, HELD, or SETTLED
     const gainA = pctReturn(duel.tokenA.startMarketCapUsd, duel.tokenA.sustainedPeakMarketCapUsd)
     const gainB = pctReturn(duel.tokenB.startMarketCapUsd, duel.tokenB.sustainedPeakMarketCapUsd)
     const leading = gainA >= gainB ? "A" : "B"
@@ -261,55 +288,76 @@ export default function DuelDetailPage() {
     const myResult = (settled || settling) && mySide !== undefined ? (duel.winnerSide === mySide ? "won" : "lost") : null
 
     return (
-        <div className="animate-in fade-in duration-500 mx-auto max-w-4xl space-y-6 pt-4">
-            <div className="text-center">
-                <div className="text-xs uppercase tracking-wide text-muted-foreground">
-                    {settled || settling ? "Final Result" : held ? "Under Review" : "Time Remaining"}
-                </div>
-                <div className="tabular mt-1 text-5xl font-extrabold tracking-wider text-primary glow-text">
-                    {settled || settling ? "DONE" : held ? "HELD" : liveCountdown.label}
+        <div className="space-y-6">
+            {/* Top Bar Navigation */}
+            <div className="flex items-center justify-between pb-4 border-b border-[var(--line)]">
+                <Link href="/duels" className="inline-flex items-center gap-1.5 font-mono text-xs text-[var(--dim)] hover:text-white transition-colors">
+                    <ArrowLeft className="h-3.5 w-3.5" /> Back to Duels
+                </Link>
+                <div className="flex items-center gap-2">
+                    <span className="font-mono text-[11px] text-[var(--dim)] uppercase px-2 py-0.5 border border-[var(--line)] bg-[var(--s1)]">
+                        {settled ? "SETTLED" : settling ? "SETTLING" : "LIVE ROUND"}
+                    </span>
                 </div>
             </div>
 
+            {/* Battle Status Clock */}
+            <div className="p-6 text-center bg-[var(--s1)] border border-[var(--line)]">
+                <div className="font-mono text-[10px] text-[var(--faint)] uppercase tracking-wider">
+                    {settled || settling ? "RESULT" : held ? "ORACLE REVIEW" : "TIME REMAINING"}
+                </div>
+                <div className="utd-pixel mt-2 text-4xl sm:text-5xl text-white">
+                    {settled || settling ? "MATCH FINISHED" : held ? "HELD" : liveCountdown.label}
+                </div>
+                <div className="mt-2 utd-body text-xs text-[var(--dim)]">
+                    {settled || settling
+                        ? "80% of pot paid out to winner · 20% protocol burn"
+                        : "Buy-only round. Sustained peaks hold after 30s dwell time."}
+                </div>
+            </div>
+
+            {/* Held Alert */}
             {held && (
-                <Card className="text-center">
-                    <CardContent className="space-y-2 pt-6">
-                        <div className="flex items-center justify-center gap-2">
-                            <ShieldCheck className="h-5 w-5 text-destructive" />
-                            <p className="text-lg font-bold text-destructive">Match flagged for review</p>
-                        </div>
-                        <p className="mx-auto max-w-md text-sm text-muted-foreground">
-                            Both wallets in this duel were seen from the same network, a possible sign of one person
-                            controlling both sides. Settlement is paused until a human reviews it.
-                        </p>
-                    </CardContent>
-                </Card>
+                <div className="p-5 bg-[var(--s1)] border border-[var(--hot)] text-center">
+                    <div className="flex items-center justify-center gap-2 text-[var(--hot)] mb-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        <span className="utd-pixel text-xs">FLAGGED FOR ORACLE REVIEW</span>
+                    </div>
+                    <p className="utd-body text-xs text-[var(--dim)] max-w-lg mx-auto">
+                        Both participating wallets were flagged by risk filters. Settlement is held until oracle validation concludes.
+                    </p>
+                </div>
             )}
 
+            {/* Ready to Claim Alert */}
             {settling && (
-                <Card className="text-center">
-                    <CardContent className="space-y-2 pt-6">
-                        <div className="flex items-center justify-center gap-2">
-                            <Trophy className="h-5 w-5 text-[hsl(var(--good))]" />
-                            <p className="text-lg font-bold text-[hsl(var(--good))]">
-                                {duel.winnerSide === 0 ? duel.tokenA.symbol : duel.tokenB.symbol} wins. Ready to claim.
-                            </p>
-                        </div>
-                        <p className="mx-auto max-w-md text-sm text-muted-foreground">
-                            The result is final. Anyone can submit it on-chain to release the pot, no fee, no advantage
-                            to going first.
-                        </p>
-                        <Button disabled={claiming} onClick={handleClaimSettlement} className="mt-2">
-                            {claiming ? "Confirm In Wallet…" : "Claim Result"}
-                        </Button>
-                    </CardContent>
-                </Card>
+                <div className="p-6 bg-[var(--s1)] border border-[var(--acid)] text-center">
+                    <div className="flex items-center justify-center gap-2 text-[var(--acid)] mb-2">
+                        <Trophy className="h-4 w-4" />
+                        <span className="utd-pixel text-xs">
+                            {duel.winnerSide === 0 ? duel.tokenA.symbol : duel.tokenB.symbol} WINS THE MATCH
+                        </span>
+                    </div>
+                    <p className="utd-body text-xs text-[var(--dim)] max-w-md mx-auto mb-4">
+                        Oracle signature verified. Trigger on-chain settlement to release funds from escrow.
+                    </p>
+                    <button
+                        disabled={claiming}
+                        onClick={handleClaimSettlement}
+                        className="utd-btn py-2.5 px-6 text-[10px]"
+                    >
+                        {claiming ? "CONFIRMING ON-CHAIN…" : "TRIGGER ESCROW PAYOUT →"}
+                    </button>
+                </div>
             )}
 
-            <div className="grid items-center gap-6 md:grid-cols-[1fr_auto_1fr]">
+            {/* Combat Arena: Side A vs Side B */}
+            <div className="grid items-stretch gap-6 md:grid-cols-[1fr_auto_1fr]">
+                {/* Fighter A */}
                 <BattlePanel
                     side="A"
                     symbol={duel.tokenA.symbol}
+                    name={duel.tokenA.name}
                     startMc={duel.tokenA.startMarketCapUsd}
                     gainPct={gainA}
                     leading={leading === "A"}
@@ -317,17 +365,19 @@ export default function DuelDetailPage() {
                     won={(settled || settling) && duel.winnerSide === 0}
                     isYours={myWallet && (isCreator ? duel.creatorSide === 0 : duel.creatorSide === 1)}
                 />
-                <div className="flex flex-col items-center gap-1 py-4 md:py-0">
-                    <Swords className="h-5 w-5 text-primary/60" />
-                    <div className="text-3xl font-extrabold text-primary" style={{ textShadow: "3px 3px 0 hsl(var(--primary) / 0.25)" }}>
-                        VS
-                    </div>
-                    <div className="mt-1 text-[10px] uppercase tracking-wide text-muted-foreground">Pot</div>
-                    <div className="tabular text-sm font-bold">${duel.buyInUsd * 2}</div>
+
+                {/* Center Pot Details */}
+                <div className="flex flex-col items-center justify-center gap-2 py-4 md:py-0">
+                    <span className="font-mono text-xs text-[var(--faint)]">VS</span>
+                    <div className="mt-1 font-mono text-[9px] text-[var(--faint)] uppercase">TOTAL POT</div>
+                    <div className="utd-pixel text-base text-[var(--acid)]">${duel.buyInUsd * 2}</div>
                 </div>
+
+                {/* Fighter B */}
                 <BattlePanel
                     side="B"
                     symbol={duel.tokenB.symbol}
+                    name={duel.tokenB.name}
                     startMc={duel.tokenB.startMarketCapUsd}
                     gainPct={gainB}
                     leading={leading === "B"}
@@ -337,36 +387,40 @@ export default function DuelDetailPage() {
                 />
             </div>
 
+            {/* Settled Victory Callout */}
             {settled && (
-                <Card className="text-center">
-                    <CardContent className="space-y-2 pt-6">
-                        <div className="flex items-center justify-center gap-2">
-                            <Trophy className="h-5 w-5 text-[hsl(var(--good))]" />
-                            <p className="text-lg font-bold text-[hsl(var(--good))]">
-                                {duel.winnerSide === 0 ? duel.tokenA.symbol : duel.tokenB.symbol} wins the duel
-                            </p>
-                        </div>
-                        {myResult && (
-                            <p className={`text-sm font-semibold ${myResult === "won" ? "text-[hsl(var(--good))]" : "text-muted-foreground"}`}>
-                                You {myResult} this duel
-                            </p>
-                        )}
-                        <p className="text-sm text-muted-foreground">
-                            Winner earned {duel.winnerPoints} pts · Loser earned {duel.loserPoints} pts
+                <div className="p-6 bg-[var(--s1)] border border-[var(--line)] text-center">
+                    <div className="flex items-center justify-center gap-2 text-[var(--acid)] mb-2">
+                        <Trophy className="h-4 w-4" />
+                        <span className="utd-pixel text-xs">
+                            {duel.winnerSide === 0 ? duel.tokenA.symbol : duel.tokenB.symbol} VICTORIOUS
+                        </span>
+                    </div>
+                    {myResult && (
+                        <p className={`utd-pixel text-[10px] mt-1 ${myResult === "won" ? "text-[var(--acid)]" : "text-[var(--hot)]"}`}>
+                            YOU {myResult.toUpperCase()} THIS DUEL
                         </p>
+                    )}
+                    <p className="utd-body text-xs text-[var(--dim)] mt-2">
+                        Winner earned <strong className="text-white font-mono">+{duel.winnerPoints} PTS</strong> &middot; Loser earned <strong className="text-white font-mono">+{duel.loserPoints} PTS</strong>
+                    </p>
+                    <div className="mt-5">
                         <a href={buildShareIntent(duel, myResult)} target="_blank" rel="noopener noreferrer">
-                            <Button variant="outline" size="sm" className="mt-2 gap-1.5">
+                            <button className="utd-btn-outline inline-flex items-center gap-2 py-2 px-4 text-[9px] hover:border-[var(--acid)]">
                                 <Twitter className="h-3.5 w-3.5" />
-                                Share on X
-                            </Button>
+                                SHARE ON X
+                            </button>
                         </a>
-                    </CardContent>
-                </Card>
+                    </div>
+                </div>
             )}
 
-            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
-                <ShieldCheck className="h-4 w-4 text-primary" />
-                Market caps tracked live from Robinhood Chain, validated through the liquidity-weighted median, liquidity-depth gate, TWAP, and sustained-peak oracle pipeline.
+            {/* Integrity note */}
+            <div className="p-4 bg-[var(--s1)] border border-[var(--line)] flex items-center justify-center gap-2 text-xs utd-body text-[var(--dim)]">
+                <ShieldCheck className="h-4 w-4 text-[var(--acid)] shrink-0" />
+                <span>
+                    Oracle feeds validated with 60s TWAP, 30s dwell peak check, and autonomous escrow.
+                </span>
             </div>
         </div>
     )
@@ -375,6 +429,7 @@ export default function DuelDetailPage() {
 function BattlePanel({
     side,
     symbol,
+    name,
     startMc,
     gainPct,
     leading,
@@ -384,6 +439,7 @@ function BattlePanel({
 }: {
     side: "A" | "B"
     symbol: string
+    name?: string
     startMc: number
     gainPct: number
     leading: boolean
@@ -391,52 +447,80 @@ function BattlePanel({
     won: boolean
     isYours?: boolean
 }) {
-    const barPct = Math.max(4, Math.min(100, 50 + gainPct))
-    const sideColor = side === "A" ? "var(--side-a)" : "var(--side-b)"
+    const isSideA = side === "A"
+    const color = isSideA ? "var(--hot)" : "var(--cool)"
+    const barPct = Math.max(5, Math.min(100, 50 + gainPct))
+
     return (
-        <Card
-            className={`cyber-gradient side-${side.toLowerCase()} relative overflow-hidden ${won ? "glow-pulse" : ""}`}
-            style={won ? { color: `hsl(${sideColor})` } : undefined}
+        <div
+            className={`p-6 bg-[var(--s1)] border relative transition-all ${
+                won
+                    ? "border-[var(--acid)]"
+                    : isSideA
+                      ? "border-[var(--hot)]/50"
+                      : "border-[var(--cool)]/50"
+            }`}
         >
             {isYours && (
-                <div className="absolute right-0 top-0 border-b-2 border-l-2 border-border bg-background px-2 py-1 text-[9px] uppercase tracking-wide text-muted-foreground">
-                    Your side
+                <div className="absolute right-0 top-0 bg-[var(--s2)] border-b border-l border-[var(--line)] px-2.5 py-1 font-mono text-[9px] text-[var(--acid)]">
+                    YOUR SIDE
                 </div>
             )}
-            <CardContent className="space-y-4 pt-6">
-                <div className="flex items-center justify-between">
+
+            <div className="flex items-center justify-between pb-3 border-b border-[var(--line)]">
+                <div className="flex items-center gap-2">
                     <SideTag side={side} label={symbol} />
-                    {won ? (
-                        <span className="flex items-center gap-1 text-xs font-bold text-[hsl(var(--good))]">
-                            <Trophy className="h-3.5 w-3.5" /> Winner
-                        </span>
-                    ) : leading ? (
-                        <span className="text-xs text-[hsl(var(--good))]">● leading</span>
-                    ) : (
-                        <span className="text-xs text-muted-foreground">trailing</span>
-                    )}
+                    {name && <span className="utd-body text-xs text-[var(--dim)] truncate max-w-[120px]">{name}</span>}
                 </div>
-                <div className="flex items-end gap-4">
-                    <div className="relative h-40 w-10 flex-none border-2 border-foreground/60 bg-background/40">
+                {won ? (
+                    <span className="utd-pixel text-[9px] text-[var(--acid)] flex items-center gap-1">
+                        <Trophy className="h-3 w-3" /> WINNER
+                    </span>
+                ) : leading ? (
+                    <span className="utd-pixel text-[8px] text-[var(--acid)]">
+                        LEADING
+                    </span>
+                ) : (
+                    <span className="font-mono text-[10px] text-[var(--faint)]">TRAILING</span>
+                )}
+            </div>
+
+            <div className="mt-6 space-y-4">
+                {/* Horizontal Progress Bar */}
+                <div>
+                    <div className="flex justify-between items-center text-xs mb-1.5 font-mono">
+                        <span className="text-[var(--faint)]">Validated Gain</span>
+                        <span
+                            className={`font-semibold ${
+                                gainPct >= 0 ? "text-[var(--acid)]" : "text-[var(--hot)]"
+                            }`}
+                        >
+                            {gainPct >= 0 ? "+" : ""}{gainPct.toFixed(1)}%
+                        </span>
+                    </div>
+                    <div className="h-2 w-full bg-[var(--s0)] border border-[var(--line)] overflow-hidden">
                         <div
-                            className="absolute bottom-0 left-0 right-0 transition-all duration-700 ease-out"
-                            style={{ height: `${barPct}%`, backgroundColor: `hsl(${sideColor})` }}
+                            className="h-full transition-all duration-500"
+                            style={{
+                                width: `${barPct}%`,
+                                backgroundColor: color,
+                            }}
                         />
                     </div>
-                    <div className="min-w-0 flex-1">
-                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">Starting MC</div>
-                        <div className="tabular text-sm font-semibold">{formatUsd(startMc)}</div>
-                        <div className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">Validated Gain</div>
-                        <div className={`tabular text-2xl font-extrabold ${gainPct >= 0 ? "text-[hsl(var(--good))]" : "text-destructive"}`}>
-                            {gainPct >= 0 ? "+" : ""}
-                            {gainPct.toFixed(1)}%
-                        </div>
+                </div>
+
+                {/* Metrics Matrix */}
+                <div className="grid grid-cols-2 gap-px bg-[var(--line)] pt-2">
+                    <div className="bg-[var(--s0)] p-3">
+                        <div className="font-mono text-[10px] text-[var(--faint)]">STARTING MC</div>
+                        <div className="font-mono text-xs text-white mt-1">{formatUsd(startMc)}</div>
+                    </div>
+                    <div className="bg-[var(--s0)] p-3">
+                        <div className="font-mono text-[10px] text-[var(--faint)]">SUSTAINED PEAK</div>
+                        <div className="font-mono text-xs text-[var(--acid)] mt-1">{formatUsd(peak)}</div>
                     </div>
                 </div>
-                <div className="pixel-flat border-2 border-border bg-background/40 px-2 py-1.5 text-[10px] text-muted-foreground">
-                    Sustained peak: <span className="tabular">{formatUsd(peak)}</span>
-                </div>
-            </CardContent>
-        </Card>
+            </div>
+        </div>
     )
 }
