@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import { formatUnits } from 'viem';
+import { readStakeTokenDecimals } from '@/lib/chainClient';
 import { createLobby } from '@mcapduel/matchmaking';
 import { connectToDatabase } from '@/lib/mongoose';
 import Duel from '@/lib/models/Duel';
@@ -63,13 +64,10 @@ export async function POST(req: NextRequest) {
         // The wallet already signed and paid gas for this on-chain transaction
         // before calling us -- never trust the client's claim of what it did;
         // decode the real DuelCreated event from the real receipt instead.
-        // stakeToken decimals: 18 (MockERC20 on the local Anvil deployment --
-        // see Contracts/script/DeployDuel.s.sol). A real stablecoin (e.g. USDC,
-        // 6 decimals) needs this adjusted at production deployment time.
         const created = await verifyDuelCreated(txHash, creatorWallet);
         const receiptEvent = created.event;
         const escrowAddress = created.escrowAddress;
-        const buyInUsd = Number(formatUnits(receiptEvent.buyIn, 18));
+        const buyInUsd = Number(formatUnits(receiptEvent.buyIn, await readStakeTokenDecimals()));
         const creatorSide = receiptEvent.creatorSide as 0 | 1;
         const durationSeconds = Number(receiptEvent.durationSeconds);
 

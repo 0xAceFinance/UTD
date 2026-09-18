@@ -177,6 +177,61 @@ describe('admin HELD recovery: on-chain duel', () => {
   });
 });
 
+describe('admin HELD recovery: one resolution per duel', () => {
+  const resolve = (id: string, action: string) =>
+    resolveRoute(postJson(`http://localhost/api/admin/duels/${id}/resolve`, { action }, ADMIN_HEADERS), {
+      params: Promise.resolve({ id }),
+    });
+
+  it('MONEY SAFETY: void then confirm -- the confirm is rejected and never returns or stores a settle signature', async () => {
+    const duel = await createHeldDuel({ escrowAddress: ESCROW });
+    const id = String(duel._id);
+
+    const voidRes = await resolve(id, 'void');
+    expect(voidRes.status).toBe(200);
+    const voidSignature = (await body(voidRes)).data.oracleSignature;
+    expect(voidSignature).toBeTruthy();
+
+    const confirmRes = await resolve(id, 'confirm');
+    expect(confirmRes.status).toBe(409);
+    const confirmJson = await body(confirmRes);
+    expect(confirmJson.error).toBe('a resolution was already signed for this duel');
+    expect(JSON.stringify(confirmJson)).not.toMatch(/0x[0-9a-f]{130}/i); // no signature leaked
+
+    const reloaded = await Duel.findById(duel._id);
+    expect(reloaded?.status).toBe('HELD');
+    expect(reloaded?.oracleSignature).toBe(voidSignature);
+    expect(reloaded?.winnerSide).toBeUndefined();
+  });
+
+  it('a second void is rejected too and keeps the first signature', async () => {
+    const duel = await createHeldDuel({ escrowAddress: ESCROW });
+    const id = String(duel._id);
+    const first = (await body(await resolve(id, 'void'))).data.oracleSignature;
+
+    expect((await resolve(id, 'void')).status).toBe(409);
+    expect((await Duel.findById(duel._id))?.oracleSignature).toBe(first);
+  });
+
+  it('the conditional update is the real guard: a signature stored between the read and the write still wins', async () => {
+    const duel = await createHeldDuel({ escrowAddress: ESCROW });
+    // Simulate a concurrent void landing after this request's findById but
+    // before its findOneAndUpdate, by making findById return the stale doc.
+    const stale = await Duel.findById(duel._id);
+    await Duel.updateOne({ _id: duel._id }, { $set: { oracleSignature: '0xconcurrent' } });
+    const spy = vi.spyOn(Duel, 'findById').mockResolvedValueOnce(stale);
+    try {
+      const res = await resolve(String(duel._id), 'confirm');
+      expect(res.status).toBe(409);
+    } finally {
+      spy.mockRestore();
+    }
+    const reloaded = await Duel.findById(duel._id);
+    expect(reloaded?.status).toBe('HELD');
+    expect(reloaded?.oracleSignature).toBe('0xconcurrent');
+  });
+});
+
 describe('admin HELD recovery: guards', () => {
   it('rejects resolving a duel that is not HELD', async () => {
     const duel = await createDuel({ status: 'LIVE', creatorWallet: CREATOR, opponentWallet: OPPONENT });

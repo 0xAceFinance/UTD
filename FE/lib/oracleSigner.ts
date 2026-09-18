@@ -1,6 +1,32 @@
 import { encodePacked, keccak256 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { CONTRACTS } from '@/config/contracts';
+import { readSettlementSigner } from '@/lib/chainClient';
+
+/**
+ * Each escrow verifies against the signer it snapshotted at activate()
+ * (BattleEscrow.settlementSigner()), not the factory's current oracleSigner.
+ * So after a rotation, duels activated before it still need the old key:
+ * ORACLE_SIGNER_PRIVATE_KEY_PREVIOUS keeps it available for the ~24h those
+ * duels can still be in flight. Picks whichever configured key the escrow
+ * actually expects, and throws if neither does -- a signature from the wrong
+ * key would just revert on-chain, so it's better never to store one.
+ */
+async function signerFor(escrowAddress: `0x${string}`) {
+    const current = process.env.ORACLE_SIGNER_PRIVATE_KEY;
+    if (!current) throw new Error('ORACLE_SIGNER_PRIVATE_KEY is not configured');
+    const previous = process.env.ORACLE_SIGNER_PRIVATE_KEY_PREVIOUS;
+
+    const expected = (await readSettlementSigner(escrowAddress)).toLowerCase();
+    for (const key of previous ? [current, previous] : [current]) {
+        const account = privateKeyToAccount(key as `0x${string}`);
+        if (account.address.toLowerCase() === expected) return account;
+    }
+    throw new Error(
+        `no configured oracle key matches escrow ${escrowAddress}'s settlementSigner ${expected} ` +
+            '(check ORACLE_SIGNER_PRIVATE_KEY / ORACLE_SIGNER_PRIVATE_KEY_PREVIOUS after a signer rotation)'
+    );
+}
 
 /**
  * Signs a settlement result exactly the way BattleEscrow.settle() verifies
@@ -20,10 +46,7 @@ import { CONTRACTS } from '@/config/contracts';
  * oracleSigner must be set to match it.
  */
 export async function signSettlement(escrowAddress: `0x${string}`, winnerSide: 0 | 1): Promise<`0x${string}`> {
-    const privateKey = process.env.ORACLE_SIGNER_PRIVATE_KEY;
-    if (!privateKey) throw new Error('ORACLE_SIGNER_PRIVATE_KEY is not configured');
-
-    const account = privateKeyToAccount(privateKey as `0x${string}`);
+    const account = await signerFor(escrowAddress);
     const message = keccak256(
         encodePacked(['address', 'uint8', 'uint256'], [escrowAddress, winnerSide, BigInt(CONTRACTS.chainId)])
     );
@@ -43,10 +66,7 @@ const VOID_MARKER = 2;
  * flagged match is decided not to have been legitimate.
  */
 export async function signVoid(escrowAddress: `0x${string}`): Promise<`0x${string}`> {
-    const privateKey = process.env.ORACLE_SIGNER_PRIVATE_KEY;
-    if (!privateKey) throw new Error('ORACLE_SIGNER_PRIVATE_KEY is not configured');
-
-    const account = privateKeyToAccount(privateKey as `0x${string}`);
+    const account = await signerFor(escrowAddress);
     const message = keccak256(
         encodePacked(['address', 'uint8', 'uint256'], [escrowAddress, VOID_MARKER, BigInt(CONTRACTS.chainId)])
     );

@@ -6,7 +6,9 @@ import { Slider } from "@/components/ui/slider"
 import { toast } from "sonner"
 import { useWallet } from "@/hooks/useWallet"
 import { createDuelOnChain } from "@/lib/duelContract"
+import { useFactoryState } from "@/hooks/useFactoryState"
 import { DuelTokenDTO } from "../../components/duel/types"
+import { PausedBanner } from "../../components/duel/PausedBanner"
 
 const QUICK_BUY_INS = [25, 50, 100, 250]
 
@@ -23,6 +25,7 @@ export default function CreateDuelPage() {
     const [duration, setDuration] = useState(25)
     const [submitting, setSubmitting] = useState(false)
     const [stage, setStage] = useState<"idle" | "wallet" | "saving">("idle")
+    const factory = useFactoryState()
 
     useEffect(() => {
         fetch("/api/duel-tokens")
@@ -48,7 +51,9 @@ export default function CreateDuelPage() {
     }
 
     const bothPicked = Boolean(tokenA && tokenB)
-    const canSubmit = connected && bothPicked && buyIn > 0 && !submitting
+    const paused = factory?.paused ?? false
+    const belowMin = factory !== null && buyIn < factory.minBuyInUsd
+    const canSubmit = connected && bothPicked && buyIn > 0 && !belowMin && !paused && factory !== null && !submitting
     const pot = buyIn * 2
     const winAmount = Math.round(pot * 0.8)
 
@@ -102,6 +107,7 @@ export default function CreateDuelPage() {
     return (
         <div className="mx-auto max-w-2xl space-y-7">
             {/* The top bar already says NEW DUEL; this is just the one-line brief. */}
+            {paused && <PausedBanner />}
             <p className="text-[14px] text-[var(--dim)]">
                 Pick two tokens, set a stake and a round length. It goes live once someone accepts.
             </p>
@@ -199,7 +205,7 @@ export default function CreateDuelPage() {
                         <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-mono text-sm text-[var(--faint)]">$</span>
                         <input
                             type="number"
-                            min={1}
+                            min={factory?.minBuyInUsd ?? 1}
                             value={buyIn}
                             onChange={(e) => setBuyIn(Number(e.target.value))}
                             inputMode="numeric"
@@ -208,7 +214,7 @@ export default function CreateDuelPage() {
                     </div>
 
                     <div className="flex gap-px bg-[var(--line)]">
-                        {QUICK_BUY_INS.map((v) => (
+                        {QUICK_BUY_INS.filter((v) => !factory || v >= factory.minBuyInUsd).map((v) => (
                             <button
                                 key={v}
                                 onClick={() => setBuyIn(v)}
@@ -223,6 +229,11 @@ export default function CreateDuelPage() {
                         ))}
                     </div>
                 </div>
+                {factory && (
+                    <p className={`font-mono text-xs ${belowMin ? "text-[var(--hot)]" : "text-[var(--faint)]"}`}>
+                        Minimum buy-in: ${factory.minBuyInUsd}
+                    </p>
+                )}
             </div>
 
             {/* Step 4: Duration */}
@@ -269,7 +280,9 @@ export default function CreateDuelPage() {
                 >
                     {!connected
                         ? "CONNECT FIRST"
-                        : stage === "wallet"
+                        : paused
+                          ? "PAUSED"
+                          : stage === "wallet"
                           ? "CONFIRM IN WALLET…"
                           : stage === "saving"
                             ? "CREATING…"

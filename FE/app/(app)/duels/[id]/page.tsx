@@ -17,9 +17,16 @@ import { ShieldCheck, Trophy, Twitter, AlertTriangle, ArrowLeft } from "lucide-r
 import Link from "next/link"
 import { toast } from "sonner"
 import { useWallet } from "@/hooks/useWallet"
-import { cancelDuelOnChain, expireDuelOnChain, settleDuelOnChain, refundStaleDuelOnChain } from "@/lib/duelContract"
+import {
+    cancelDuelOnChain,
+    expireDuelOnChain,
+    settleDuelOnChain,
+    refundStaleDuelOnChain,
+    readOwed,
+    withdrawOwedOnChain,
+} from "@/lib/duelContract"
 import { SideTag } from "../../components/duel/SideTag"
-import { DuelDTO, formatUsd, pctReturn } from "../../components/duel/types"
+import { DuelDTO, canForceRefund, formatUsd, pctReturn } from "../../components/duel/types"
 
 function buildShareIntent(duel: DuelDTO, myResult: "won" | "lost" | null): string {
     const winnerSymbol = duel.winnerSide === 0 ? duel.tokenA.symbol : duel.tokenB.symbol
@@ -33,11 +40,6 @@ function buildShareIntent(duel: DuelDTO, myResult: "won" | "lost" | null): strin
     const url = typeof window !== "undefined" ? `${window.location.origin}/duels/${duel._id}` : ""
     return `https://twitter.com/intent/tweet?${new URLSearchParams({ text, url }).toString()}`
 }
-
-/** Mirrors BattleEscrow.STALE_REFUND_GRACE_PERIOD (Contracts/src/duel/BattleEscrow.sol) --
- * a UI-only estimate for when to surface the force-refund action. The real gate is
- * on-chain; clicking a little early just reverts with "not stale yet". */
-const STALE_REFUND_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000
 
 function useCountdown(target?: string) {
     const [remaining, setRemaining] = useState(0)
@@ -299,6 +301,7 @@ export default function DuelDetailPage() {
                             ? "Both players' stakes have been refunded."
                             : "The creator's stake has been refunded."}
                     </p>
+                    {duel.escrowAddress && <OwedWithdraw escrowAddress={duel.escrowAddress} wallet={address} />}
                     <div className="mt-6">
                         <Link href="/duels">
                             <button className="utd-btn text-[9px] py-2 px-5">
@@ -320,11 +323,10 @@ export default function DuelDetailPage() {
     const held = duel.status === "HELD"
     const mySide: 0 | 1 | undefined = isCreator ? duel.creatorSide : isOpponent ? (duel.creatorSide === 0 ? 1 : 0) : undefined
     const myResult = (settled || settling) && mySide !== undefined ? (duel.winnerSide === mySide ? "won" : "lost") : null
-    // The last-resort recovery path -- only ever true for a genuinely stuck
-    // duel (oracle key issue, unresolved HELD flag, blacklisted winner
-    // address). Never fires during normal settlement, which happens within
-    // seconds of endTime.
-    const isStale = !settled && !!duel.endTime && Date.now() - new Date(duel.endTime).getTime() >= STALE_REFUND_GRACE_PERIOD_MS
+    // The last-resort recovery path -- only for a duel with no result yet
+    // (LIVE never signed, or HELD never resolved). Never on SETTLING: a winner
+    // is signed and refunding would let the loser escape (see canForceRefund).
+    const isStale = canForceRefund(duel)
 
     return (
         <div className="space-y-6">
@@ -378,7 +380,7 @@ export default function DuelDetailPage() {
                         </span>
                     </div>
                     <p className="utd-body text-xs text-[var(--dim)] max-w-md mx-auto mb-4">
-                        Oracle signature verified. Trigger on-chain settlement to release funds from escrow.
+                        Oracle signature verified. Payout is submitted automatically; anyone can also trigger it now.
                     </p>
                     <button
                         disabled={claiming}
@@ -474,6 +476,20 @@ export default function DuelDetailPage() {
                 </div>
             )}
 
+            {duel.deferredPayouts && duel.deferredPayouts.length > 0 && (
+                <div className="p-4 bg-[var(--s1)] border border-[var(--hot)] text-xs utd-body text-[var(--dim)]">
+                    <div className="flex items-center gap-2 text-[var(--hot)] mb-1">
+                        <AlertTriangle className="h-4 w-4" />
+                        <span className="utd-pixel text-[10px]">PAYOUT HELD IN ESCROW</span>
+                    </div>
+                    The stake token refused a transfer during settlement, so the escrow is holding it for{" "}
+                    {duel.deferredPayouts.map((p) => `${p.to.slice(0, 6)}…${p.to.slice(-4)}`).join(", ")}.
+                    That wallet can withdraw it here once the token allows the transfer.
+                </div>
+            )}
+
+            {duel.escrowAddress && <OwedWithdraw escrowAddress={duel.escrowAddress} wallet={address} />}
+
             {/* Integrity note */}
             <div className="p-4 bg-[var(--s1)] border border-[var(--line)] flex items-center justify-center gap-2 text-xs utd-body text-[var(--dim)]">
                 <ShieldCheck className="h-4 w-4 text-[var(--acid)] shrink-0" />
@@ -481,6 +497,58 @@ export default function DuelDetailPage() {
                     Oracle feeds validated with 60s TWAP, 30s dwell peak check, and autonomous escrow.
                 </span>
             </div>
+        </div>
+    )
+}
+
+/**
+ * BattleEscrow credits owed[wallet] instead of paying when the stake token
+ * blocks a transfer (e.g. a USDC blacklist). Reads the connected wallet's
+ * balance straight from the escrow and offers withdraw() -- which only ever
+ * pays msg.sender. Renders nothing when nothing is owed.
+ */
+function OwedWithdraw({ escrowAddress, wallet }: { escrowAddress: string; wallet?: string }) {
+    const [owed, setOwed] = useState<bigint>(0n)
+    const [withdrawing, setWithdrawing] = useState(false)
+
+    const refresh = useCallback(async () => {
+        if (!wallet) return setOwed(0n)
+        try {
+            setOwed(await readOwed(escrowAddress as `0x${string}`, wallet as `0x${string}`))
+        } catch {
+            // Older escrow without owed(), or RPC hiccup -- nothing to offer.
+        }
+    }, [escrowAddress, wallet])
+
+    useEffect(() => {
+        refresh()
+        const id = setInterval(refresh, 15_000)
+        return () => clearInterval(id)
+    }, [refresh])
+
+    if (owed === 0n) return null
+
+    async function handleWithdraw() {
+        setWithdrawing(true)
+        try {
+            await withdrawOwedOnChain(escrowAddress as `0x${string}`)
+            toast.success("Withdrawn to your wallet.")
+            await refresh()
+        } catch (err) {
+            toast.error((err as Error).message || "Withdraw failed. The token may still be blocking this transfer.")
+        } finally {
+            setWithdrawing(false)
+        }
+    }
+
+    return (
+        <div className="p-5 bg-[var(--s1)] border border-[var(--acid)] text-center">
+            <p className="utd-body text-xs text-[var(--dim)] mb-3">
+                This escrow is holding a payout for your wallet that couldn&apos;t be sent automatically.
+            </p>
+            <button disabled={withdrawing} onClick={handleWithdraw} className="utd-btn py-2.5 px-6 text-[10px]">
+                {withdrawing ? "WITHDRAWING…" : "WITHDRAW"}
+            </button>
         </div>
     )
 }

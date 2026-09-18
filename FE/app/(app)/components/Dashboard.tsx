@@ -8,6 +8,8 @@ import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { useWallet } from "@/hooks/useWallet"
 import { joinDuelOnChain } from "@/lib/duelContract"
+import { useFactoryState } from "@/hooks/useFactoryState"
+import { PausedBanner } from "./duel/PausedBanner"
 import { SideTag, StatusTag, TierBadge } from "./duel/SideTag"
 import { DuelDTO, DuelStatus, DuelTokenDTO, formatRelativeTime, formatUsd, pctReturn } from "./duel/types"
 
@@ -34,6 +36,7 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true)
     const [joiningId, setJoiningId] = useState<string | null>(null)
     const [pendingJoin, setPendingJoin] = useState<DuelDTO | null>(null)
+    const paused = useFactoryState()?.paused ?? false
 
     const [browseLobbies, setBrowseLobbies] = useState<DuelDTO[]>([])
     const [lobbiesLoading, setLobbiesLoading] = useState(true)
@@ -107,6 +110,10 @@ export default function Dashboard() {
             toast.error("Connect your wallet to join a duel.")
             return
         }
+        if (paused && lobby.escrowAddress) {
+            toast.error("Duels are paused right now. Try again later.")
+            return
+        }
         setPendingJoin(lobby)
     }
 
@@ -152,6 +159,7 @@ export default function Dashboard() {
 
     return (
         <div className="space-y-6 lg:space-y-8">
+            {paused && <PausedBanner />}
             {/* Stats */}
             <dl className="grid grid-cols-3 gap-px border border-[var(--line)] bg-[var(--line)]">
                 <Stat label="Live now" value={loading ? "–" : String(liveCount)} accent live={liveCount > 0} />
@@ -277,6 +285,7 @@ export default function Dashboard() {
                                 lobby={l}
                                 me={me}
                                 joining={joiningId === l._id}
+                                paused={paused && !!l.escrowAddress}
                                 onJoin={() => openJoinConfirm(l)}
                             />
                         ))}
@@ -335,7 +344,7 @@ export default function Dashboard() {
                                         <button onClick={() => setPendingJoin(null)} className="app-chip h-11 justify-center">
                                             Cancel
                                         </button>
-                                        <button disabled={busy} onClick={() => handleJoin()} className="utd-btn h-11 text-[9px]">
+                                        <button disabled={busy || paused} onClick={() => handleJoin()} className="utd-btn h-11 text-[9px]">
                                             {busy ? "JOINING…" : "CONFIRM"}
                                         </button>
                                     </div>
@@ -398,11 +407,13 @@ function LobbyRow({
     lobby: l,
     me,
     joining,
+    paused,
     onJoin,
 }: {
     lobby: DuelDTO
     me?: string
     joining: boolean
+    paused: boolean
     onJoin: () => void
 }) {
     const isMine = Boolean(me) && (l.creatorWallet === me || l.opponentWallet === me)
@@ -467,8 +478,8 @@ function LobbyRow({
                     {started ? "Watch" : "View"}
                 </Link>
                 {canJoin && (
-                    <button disabled={joining} onClick={onJoin} className="utd-btn h-11 px-4 text-[9px] md:h-9">
-                        {joining ? "JOINING…" : "JOIN"}
+                    <button disabled={joining || paused} onClick={onJoin} className="utd-btn h-11 px-4 text-[9px] md:h-9">
+                        {joining ? "JOINING…" : paused ? "PAUSED" : "JOIN"}
                     </button>
                 )}
                 {isMyOpenLobby && (

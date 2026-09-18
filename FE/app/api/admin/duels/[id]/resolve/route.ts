@@ -32,6 +32,16 @@ import { success, failure } from '@/utils/response';
  * for the same duel can't both proceed (same pattern as maybeSettle/
  * confirm-settlement in lib/duelEngine.ts and its route).
  */
+const ALREADY_SIGNED = 'a resolution was already signed for this duel';
+
+/** Every claim below is conditional on no signature having been stored yet.
+ * A void signature leaves the duel HELD (it only leaves HELD once
+ * confirm-void sees the on-chain Voided event), so a status check alone would
+ * let a later "confirm" also sign a settlement for the same escrow -- two
+ * valid, conflicting on-chain outcomes, first submitter wins. Once any
+ * signature is stored, no second one is ever issued or returned. */
+const UNSIGNED_HELD = (id: unknown) => ({ _id: id, status: 'HELD', oracleSignature: { $exists: false } });
+
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
         if (!isAuthorizedAdmin(req)) return failure('unauthorized', 401);
@@ -46,6 +56,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const duel = await Duel.findById(id);
         if (!duel) return failure('duel not found', 404);
         if (duel.status !== 'HELD') return failure(`duel is not HELD (status: ${duel.status})`, 409);
+        if (duel.oracleSignature) return failure(ALREADY_SIGNED, 409);
 
         if (action === 'confirm') {
             const winnerSide = computeWinnerSide(duel);
@@ -53,19 +64,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             if (duel.escrowAddress) {
                 const oracleSignature = await signSettlement(duel.escrowAddress as `0x${string}`, winnerSide);
                 const claimed = await Duel.findOneAndUpdate(
-                    { _id: duel._id, status: 'HELD' },
+                    UNSIGNED_HELD(duel._id),
                     { $set: { status: 'SETTLING', winnerSide, oracleSignature } },
                     { new: true }
                 );
-                if (!claimed) return failure('duel is no longer HELD', 409);
+                if (!claimed) return failure(ALREADY_SIGNED, 409);
                 return success(claimed);
             }
 
             const claimed = await Duel.findOneAndUpdate(
-                { _id: duel._id, status: 'HELD' },
+                UNSIGNED_HELD(duel._id),
                 { $set: { status: 'SETTLED', winnerSide } }
             );
-            if (!claimed) return failure('duel is no longer HELD', 409);
+            if (!claimed) return failure(ALREADY_SIGNED, 409);
             duel.status = 'SETTLED';
             await finalizeSettlement(duel, winnerSide);
             return success(duel);
@@ -75,20 +86,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         if (duel.escrowAddress) {
             const oracleSignature = await signVoid(duel.escrowAddress as `0x${string}`);
             const claimed = await Duel.findOneAndUpdate(
-                { _id: duel._id, status: 'HELD' },
+                UNSIGNED_HELD(duel._id),
                 { $set: { oracleSignature } },
                 { new: true }
             );
-            if (!claimed) return failure('duel is no longer HELD', 409);
+            if (!claimed) return failure(ALREADY_SIGNED, 409);
             return success(claimed);
         }
 
         const claimed = await Duel.findOneAndUpdate(
-            { _id: duel._id, status: 'HELD' },
+            UNSIGNED_HELD(duel._id),
             { $set: { status: 'CANCELLED' } },
             { new: true }
         );
-        if (!claimed) return failure('duel is no longer HELD', 409);
+        if (!claimed) return failure(ALREADY_SIGNED, 409);
         return success(claimed);
     } catch (err) {
         return failure((err as Error).message, 400);

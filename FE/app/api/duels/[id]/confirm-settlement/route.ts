@@ -1,10 +1,8 @@
 import { Types } from 'mongoose';
-import { settle } from '@mcapduel/matchmaking';
 import { connectToDatabase } from '@/lib/mongoose';
 import Duel from '@/lib/models/Duel';
 import { verifyDuelSettled } from '@/lib/chainVerify';
-import { finalizeSettlement } from '@/lib/duelEngine';
-import { toLobbySnapshot, applyLobby } from '@/lib/lobbyAdapter';
+import { confirmOnChainSettlement } from '@/lib/duelEngine';
 import { success, failure } from '@/utils/response';
 
 /**
@@ -14,9 +12,11 @@ import { success, failure } from '@/utils/response';
  * client's claim of what happened: re-derives the real winnerSide from the
  * real Settled event in the real transaction receipt before touching
  * anything. Safe to call more than once -- a duel that's already SETTLED
- * just returns as-is, and the SETTLING -> SETTLED claim below is an atomic
- * compare-and-swap so two concurrent calls (a retried request, two tabs)
- * can't both reach finalizeSettlement and double-credit points.
+ * just returns as-is, and confirmOnChainSettlement's SETTLING -> SETTLED
+ * claim is an atomic compare-and-swap so two concurrent calls (a retried
+ * request, two tabs, the settlement relayer) can't both double-credit points.
+ * Normally lib/settlementRelayer.ts gets there first; this stays as the
+ * permissionless fallback.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -35,16 +35,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             return failure(`cannot confirm settlement for a duel in status ${duel.status}`, 409);
         }
 
-        const { winnerSide } = await verifyDuelSettled(txHash, duel.escrowAddress);
+        const { winnerSide, deferredPayouts } = await verifyDuelSettled(txHash, duel.escrowAddress);
 
-        const claimed = await Duel.findOneAndUpdate(
-            { _id: duel._id, status: 'SETTLING' },
-            { $set: { status: 'SETTLED', winnerSide } }
-        );
+        const claimed = await confirmOnChainSettlement(duel, winnerSide, deferredPayouts);
         if (!claimed) return success(await Duel.findById(id));
-
-        applyLobby(duel, settle(toLobbySnapshot(duel), winnerSide));
-        await finalizeSettlement(duel, winnerSide);
 
         return success(duel);
     } catch (err) {
