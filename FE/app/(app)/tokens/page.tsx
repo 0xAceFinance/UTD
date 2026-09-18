@@ -2,11 +2,10 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import { ListChecks } from "lucide-react"
 import { DuelTokenDTO, formatUsd } from "../components/duel/types"
+
+/** Shared column template for the desktop table (header + rows). */
+const COLS = "md:grid-cols-[40px_minmax(0,1fr)_96px_96px_96px_80px_112px]"
 
 export default function TokensPage() {
     const [tokens, setTokens] = useState<DuelTokenDTO[]>([])
@@ -22,76 +21,101 @@ export default function TokensPage() {
     }, [])
 
     return (
-        <div className="animate-in fade-in duration-500 mx-auto max-w-4xl space-y-6 pt-4">
-            <div className="text-center">
-                <h1 className="text-2xl text-primary glow-text md:text-3xl">Today's Gladiators</h1>
-                <p className="mx-auto mt-4 max-w-2xl text-sm leading-relaxed text-muted-foreground">
-                    We interview every gladiator in the arena every 24 hours, just for you.
-                </p>
-            </div>
+        <div className="space-y-5">
+            <p className="max-w-lg text-[14px] text-[var(--dim)]">
+                Tokens you can duel with today, screened on liquidity depth before they&apos;re listed.
+            </p>
 
-            <Card className="p-0">
-                <CardHeader>
-                    <CardTitle className="text-xs uppercase tracking-wider text-muted-foreground">Eligible for today's duels</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    {loading ? (
-                        <div className="space-y-2">
-                            {Array.from({ length: 6 }).map((_, i) => (
-                                <Skeleton key={i} className="h-11 w-full rounded-none" />
-                            ))}
-                        </div>
-                    ) : tokens.length === 0 ? (
-                        <div className="flex flex-col items-center gap-3 py-10 text-center">
-                            <ListChecks className="h-8 w-8 text-muted-foreground/50" />
-                            <p className="text-muted-foreground">
-                                No gladiators scanned yet. Run <code className="text-primary">POST /api/scan</code>.
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b-2 border-border text-left text-[10px] uppercase tracking-wide text-muted-foreground">
-                                        <th className="py-2">Rank</th>
-                                        <th className="py-2">Token</th>
-                                        <th className="py-2">Market Cap</th>
-                                        <th className="py-2">Liquidity</th>
-                                        <th className="py-2">24h Volume</th>
-                                        <th className="py-2">24h Change</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {tokens.map((t) => (
-                                        <tr key={t._id} className="border-b border-border/60 transition-colors hover:bg-secondary/40">
-                                            <td className="tabular py-3 text-muted-foreground">#{t.rank}</td>
-                                            <td className="py-3">
-                                                <div className="font-semibold">{t.symbol}</div>
-                                                <div className="text-[10px] text-muted-foreground">{t.name}</div>
-                                            </td>
-                                            <td className="tabular py-3">{formatUsd(t.marketCapUsd)}</td>
-                                            <td className="tabular py-3">{formatUsd(t.liquidityUsd)}</td>
-                                            <td className="tabular py-3">{formatUsd(t.volume24hUsd)}</td>
-                                            <td
-                                                className={`tabular py-3 font-semibold ${t.change24hPct >= 0 ? "text-[hsl(var(--good))]" : "text-destructive"}`}
-                                            >
-                                                {t.change24hPct >= 0 ? "+" : ""}
-                                                {t.change24hPct}%
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+            {loading ? (
+                <div className="space-y-2">
+                    {Array.from({ length: 8 }).map((_, i) => (
+                        <div key={i} className="app-card h-[92px] animate-pulse md:h-14" />
+                    ))}
+                </div>
+            ) : tokens.length === 0 ? (
+                <div className="app-card py-14 text-center text-[14px] text-[var(--dim)]">
+                    No tokens scanned yet today.
+                </div>
+            ) : (
+                <div>
+                    {/* Column headings, desktop only. On phones each row is a
+                        self-labelled card instead of a sideways-scrolling table. */}
+                    <div
+                        className={`hidden gap-4 px-4 pb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--faint)] md:grid ${COLS}`}
+                    >
+                        <span>#</span>
+                        <span>Token</span>
+                        <span className="text-right">Mkt cap</span>
+                        <span className="text-right">Liquidity</span>
+                        <span className="text-right">24h vol</span>
+                        <span className="text-right">24h</span>
+                        <span />
+                    </div>
 
-            <div className="text-center">
-                <Link href="/duels/create">
-                    <Button>Create a Duel →</Button>
-                </Link>
-            </div>
+                    <ul className="space-y-2">
+                        {tokens.map((t) => {
+                            const up = t.change24hPct >= 0
+                            const change = `${up ? "+" : ""}${t.change24hPct.toFixed(1)}%`
+                            return (
+                                <li
+                                    key={t._id}
+                                    className={`app-card grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 p-4 md:gap-4 md:py-3 ${COLS}`}
+                                >
+                                    <span className="hidden font-mono text-[12px] text-[var(--faint)] md:block">
+                                        {String(t.rank).padStart(2, "0")}
+                                    </span>
+
+                                    <div className="min-w-0">
+                                        <div className="flex items-baseline gap-2">
+                                            <span className="font-mono text-[11px] text-[var(--faint)] md:hidden">
+                                                #{t.rank}
+                                            </span>
+                                            <span className="utd-pixel truncate text-[11px] text-white">{t.symbol}</span>
+                                        </div>
+                                        <div className="mt-1 truncate text-[13px] text-[var(--faint)]">{t.name}</div>
+                                    </div>
+
+                                    {/* Phone: change + mcap stacked beside the name. */}
+                                    <div className="text-right font-mono text-[13px] md:hidden">
+                                        <div className={up ? "text-[var(--acid)]" : "text-[var(--hot)]"}>{change}</div>
+                                        <div className="mt-0.5 text-[var(--dim)]">{formatUsd(t.marketCapUsd)}</div>
+                                    </div>
+
+                                    <span className="hidden text-right font-mono text-[13px] text-[var(--txt)] md:block">
+                                        {formatUsd(t.marketCapUsd)}
+                                    </span>
+                                    <span className="hidden text-right font-mono text-[13px] text-[var(--dim)] md:block">
+                                        {formatUsd(t.liquidityUsd)}
+                                    </span>
+                                    <span className="hidden text-right font-mono text-[13px] text-[var(--dim)] md:block">
+                                        {formatUsd(t.volume24hUsd)}
+                                    </span>
+                                    <span
+                                        className={`hidden text-right font-mono text-[13px] md:block ${
+                                            up ? "text-[var(--acid)]" : "text-[var(--hot)]"
+                                        }`}
+                                    >
+                                        {change}
+                                    </span>
+
+                                    {/* Phone: liquidity/volume line + action. */}
+                                    <div className="col-span-2 flex items-center justify-between gap-3 border-t border-[var(--line)] pt-3 md:col-span-1 md:block md:border-0 md:pt-0 md:text-right">
+                                        <span className="font-mono text-[12px] text-[var(--faint)] md:hidden">
+                                            Liq {formatUsd(t.liquidityUsd)} · Vol {formatUsd(t.volume24hUsd)}
+                                        </span>
+                                        <Link
+                                            href={`/duels/create?tokenA=${t.symbol}`}
+                                            className="app-chip h-10 flex-none justify-center md:h-9"
+                                        >
+                                            Challenge
+                                        </Link>
+                                    </div>
+                                </li>
+                            )
+                        })}
+                    </ul>
+                </div>
+            )}
         </div>
     )
 }

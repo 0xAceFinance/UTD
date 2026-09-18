@@ -1,50 +1,57 @@
-"use client";
+"use client"
 
-import { Bell, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ConnectKitButton } from "connectkit";
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { ConnectKitButton } from "connectkit"
+import { routeTitle } from "./nav"
 
 function WalletButton() {
-  return (
-    <ConnectKitButton.Custom>
-      {({ isConnected, isConnecting, show, address, ensName }) => (
-        <Button onClick={show} disabled={isConnecting} className="gap-2">
-          {isConnected && <span className="h-1.5 w-1.5 flex-none rounded-full bg-[hsl(var(--good))]" />}
-          {isConnecting
-            ? "Connecting…"
-            : isConnected
-              ? ensName ?? `${address?.slice(0, 4)}…${address?.slice(-2)}`
-              : "Connect Wallet"}
-        </Button>
-      )}
-    </ConnectKitButton.Custom>
-  );
+    return (
+        <ConnectKitButton.Custom>
+            {({ isConnected, isConnecting, show, address, ensName }) =>
+                isConnected ? (
+                    <button
+                        onClick={show}
+                        className="flex h-9 items-center gap-2 border border-[var(--line-2)] bg-[var(--s1)] px-3 font-mono text-[12px] text-[var(--txt)] transition-colors hover:border-[var(--acid)]"
+                    >
+                        <span className="h-1.5 w-1.5 flex-none bg-[var(--acid)]" />
+                        {ensName ?? `${address?.slice(0, 6)}…${address?.slice(-4)}`}
+                    </button>
+                ) : (
+                    <button
+                        onClick={show}
+                        disabled={isConnecting}
+                        className="utd-btn h-9 px-3.5 text-[8px] sm:text-[9px]"
+                    >
+                        {isConnecting ? "CONNECTING…" : "CONNECT"}
+                    </button>
+                )
+            }
+        </ConnectKitButton.Custom>
+    )
 }
 
+/**
+ * Top bar. On phones it carries the brand (the sidebar is hidden there); on
+ * desktop the sidebar has the brand, so this shows the current screen's title.
+ */
 export default function Header() {
-  return (
-    <header className="border-b border-border/50 bg-card/80 backdrop-blur supports-[backdrop-filter]:bg-card/60 shadow-md z-10">
-      <div className="flex h-16 items-center px-6 cyber-gradient">
-        <div className="relative flex flex-1 items-center gap-x-4">
-          <div className="relative w-full max-w-md">
-            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search the battlefield..."
-              className="w-full bg-secondary/50 pl-9 border-primary/20 focus-visible:ring-1 focus-visible:ring-primary"
-            />
-          </div>
-        </div>
+    const pathname = usePathname()
 
-        <div className="flex items-center gap-x-4">
-          <Button variant="ghost" size="icon" aria-label="Notifications">
-            <Bell className="h-5 w-5" />
-          </Button>
+    return (
+        <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--s0)]/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+            <div className="flex h-14 items-center justify-between gap-3 px-4 sm:px-6 lg:h-16 lg:px-8">
+                <div className="flex min-w-0 items-center gap-3">
+                    <Link href="/duels" className="flex-none lg:hidden" aria-label="UTD home">
+                        <img src="/logo-mark.png" alt="" className="utd-mark h-8 w-8" />
+                    </Link>
+                    <h1 className="utd-pixel truncate text-[11px] text-white sm:text-[12px]">
+                        {routeTitle(pathname).toUpperCase()}
+                    </h1>
+                </div>
 
-          <WalletButton />
-        </div>
-      </div>
-    </header>
-  );
+                <WalletButton />
+            </div>
+        </header>
+    )
 }

@@ -1,0 +1,164 @@
+/* ===========================================================================
+   App shell (app/(app)/). Shares the landing page's palette and pixel face so
+   it is recognisably the same product, but deliberately drops the marketing
+   devices -- no dot-grid backdrop, no oversized pixel section titles, no
+   chamfered showcase panels. Screens here are dense, scannable and built
+   around lists and actions.
+   =========================================================================== */
+
+.app-root {
+  font-family: "Chakra Petch", ui-sans-serif, system-ui, sans-serif;
+  background: var(--s0);
+  color: var(--txt);
+}
+
+/* Brand mark ring (the landing defines its own copy in landing/theme.css). */
+.app-root .utd-mark {
+  border-radius: 9999px;
+  box-shadow: 0 0 0 1px rgba(43, 232, 132, 0.45), 0 0 12px -3px rgba(43, 232, 132, 0.5);
+}
+
+/* --- Navigation ---------------------------------------------------------- */
+
+.app-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  height: 2.5rem;
+  padding: 0 0.75rem;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dim);
+  border-left: 2px solid transparent;
+  transition: color 0.12s ease, background-color 0.12s ease;
+}
+.app-nav-item:hover {
+  color: var(--txt);
+  background: var(--s2);
+}
+.app-nav-item.is-active {
+  color: var(--txt);
+  background: var(--s2);
+  border-left-color: var(--acid);
+}
+.app-nav-item.is-active svg {
+  color: var(--acid);
+}
+
+.app-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--faint);
+  -webkit-tap-highlight-color: transparent;
+}
+.app-tab.is-active {
+  color: var(--acid);
+}
+
+.app-fab {
+  display: flex;
+  height: 2.75rem;
+  width: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  background: var(--acid);
+  color: var(--acid-ink);
+  box-shadow: 3px 3px 0 0 #0a2a18;
+  transition: transform 0.08s ease, box-shadow 0.08s ease;
+}
+.app-fab:active,
+.app-fab.is-active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 0 #0a2a18;
+}
+
+/* --- Content ------------------------------------------------------------- */
+
+/* Section label: small caps, instead of the landing's big pixel headings. */
+.app-section-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.app-card {
+  background: var(--s1);
+  border: 1px solid var(--line);
+}
+
+/* Segmented control. */
+.app-seg {
+  display: flex;
+  background: var(--s1);
+  border: 1px solid var(--line);
+  padding: 3px;
+  gap: 3px;
+}
+.app-seg > button {
+  flex: 1 1 0;
+  min-height: 2.25rem;
+  padding: 0 0.85rem;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dim);
+  white-space: nowrap;
+  transition: color 0.12s ease, background-color 0.12s ease;
+}
+.app-seg > button:hover {
+  color: var(--txt);
+}
+.app-seg > button[aria-pressed="true"] {
+  background: var(--s2);
+  color: var(--txt);
+  box-shadow: inset 0 -2px 0 var(--acid);
+}
+
+.app-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0 0.8rem;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  background: var(--s1);
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+.app-chip:hover:not(:disabled) {
+  color: var(--txt);
+}
+.app-chip[aria-pressed="true"] {
+  color: var(--acid);
+  border-color: var(--acid);
+}
+.app-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.app-root :focus-visible {
+  outline: 2px solid var(--acid);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-fab {
+    transition: none;
+  }
+}

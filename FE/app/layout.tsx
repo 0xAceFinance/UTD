@@ -21,6 +21,15 @@ export const metadata = {
   generator: 'v0.dev'
 }
 
+/* viewport-fit=cover lets the app's fixed bottom tab bar pad itself for the
+   iPhone home indicator via env(safe-area-inset-bottom). */
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#060907",
+}
+
 /**
  * Deliberately bare: the app shell (Sidebar + Header) lives in
  * app/(app)/layout.tsx, not here, so a route outside that group -- the

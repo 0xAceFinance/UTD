@@ -1,46 +1,59 @@
-export function SideTag({ side, label }: { side: 'A' | 'B'; label: string }) {
-    const color = side === 'A' ? 'hsl(var(--side-a))' : 'hsl(var(--side-b))'
+const SIDE_COLOR = { A: "var(--hot)", B: "var(--cool)" } as const
+
+/** Token symbol in its side's colour, with a solid side marker. No glow. */
+export function SideTag({ side, label }: { side: "A" | "B"; label: string }) {
     return (
-        <span
-            className="pixel-flat inline-flex items-center gap-1.5 border-2 px-2.5 py-1 text-xs font-bold"
-            style={{ borderColor: color, color, backgroundColor: `color-mix(in srgb, ${color} 12%, transparent)` }}
-        >
-            SIDE {side} · {label}
+        <span className="inline-flex items-center gap-1.5 select-none">
+            <span className="h-2.5 w-1 flex-none" style={{ background: SIDE_COLOR[side] }} />
+            <span className="utd-pixel text-[10px]" style={{ color: SIDE_COLOR[side] }}>
+                {label}
+            </span>
         </span>
     )
 }
 
 const STATUS_STYLE: Record<string, { color: string; label: string }> = {
-    OPEN: { color: 'hsl(var(--primary))', label: 'Open' },
-    MATCHED: { color: 'hsl(var(--primary))', label: 'Matched' },
-    LIVE: { color: 'hsl(var(--good))', label: 'Live' },
-    SETTLING: { color: 'hsl(var(--good))', label: 'Settling' },
-    HELD: { color: 'hsl(var(--destructive))', label: 'Held' },
-    SETTLED: { color: 'hsl(var(--muted-foreground))', label: 'Settled' },
-    EXPIRED: { color: 'hsl(var(--muted-foreground))', label: 'Expired' },
-    CANCELLED: { color: 'hsl(var(--muted-foreground))', label: 'Cancelled' },
+    OPEN: { color: "var(--acid)", label: "Open" },
+    MATCHED: { color: "var(--cool)", label: "Matched" },
+    LIVE: { color: "var(--acid)", label: "Live" },
+    SETTLING: { color: "#f59e0b", label: "Settling" },
+    HELD: { color: "var(--hot)", label: "Held for review" },
+    SETTLED: { color: "var(--dim)", label: "Settled" },
+    EXPIRED: { color: "var(--faint)", label: "Expired" },
+    CANCELLED: { color: "var(--faint)", label: "Cancelled" },
 }
 
+/** Status as a coloured square + word. LIVE breathes; nothing else moves. */
 export function StatusTag({ status }: { status: string }) {
-    const style = STATUS_STYLE[status] ?? { color: 'hsl(var(--muted-foreground))', label: status }
+    const style = STATUS_STYLE[status] ?? { color: "var(--dim)", label: status }
     return (
         <span
-            className="pixel-flat inline-flex items-center gap-1.5 border-2 px-2 py-0.5 text-[10px] font-bold uppercase"
-            style={{ borderColor: style.color, color: style.color, backgroundColor: `color-mix(in srgb, ${style.color} 12%, transparent)` }}
+            className="inline-flex items-center gap-1.5 text-[12px] font-semibold select-none"
+            style={{ color: style.color }}
         >
-            {status === 'LIVE' && <span className="h-1.5 w-1.5 flex-none animate-pulse rounded-full" style={{ backgroundColor: style.color }} />}
+            {status === "LIVE" ? (
+                <span className="utd-live h-1.5 w-1.5" />
+            ) : (
+                <span className="h-1.5 w-1.5 flex-none" style={{ background: style.color }} />
+            )}
             {style.label}
         </span>
     )
 }
 
-export function TierBadge({ tier }: { tier: 'Bronze' | 'Silver' | 'Gold' | 'Diamond' }) {
-    const varName =
-        tier === 'Diamond' ? '--tier-diamond' : tier === 'Gold' ? '--tier-gold' : tier === 'Silver' ? '--tier-silver' : '--tier-bronze'
+const TIER_COLORS: Record<string, string> = {
+    Bronze: "#e8a35b",
+    Silver: "#c4d1e6",
+    Gold: "#fbbf24",
+    Diamond: "#7dd3fc",
+}
+
+export function TierBadge({ tier }: { tier: "Bronze" | "Silver" | "Gold" | "Diamond" }) {
+    const color = TIER_COLORS[tier] ?? TIER_COLORS.Bronze
     return (
         <span
-            className="pixel-flat inline-flex items-center border-2 px-2.5 py-1 text-xs font-bold uppercase"
-            style={{ borderColor: `hsl(var(${varName}))`, backgroundColor: `hsl(var(${varName}) / 0.18)`, color: `hsl(var(${varName}))` }}
+            className="utd-pixel inline-flex items-center px-1.5 py-0.5 text-[7px] uppercase select-none"
+            style={{ border: `1px solid ${color}`, color }}
         >
             {tier}
         </span>
