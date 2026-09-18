@@ -2,7 +2,9 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Plus } from "lucide-react"
+import { Gift, Plus } from "lucide-react"
+import { useWallet } from "@/hooks/useWallet"
+import { useAirdrop } from "./airdrop/useAirdrop"
 import { NAV, isActive } from "./nav"
 
 /**
@@ -12,6 +14,9 @@ import { NAV, isActive } from "./nav"
 export default function Sidebar() {
     const pathname = usePathname()
     const creating = pathname.startsWith("/duels/create")
+    const { address, connected } = useWallet()
+    const { data, available } = useAirdrop(address)
+    const onAirdrop = pathname.startsWith("/airdrop")
 
     return (
         <aside className="fixed inset-y-0 left-0 z-40 hidden w-60 flex-col border-r border-[var(--line)] bg-[var(--s1)] lg:flex">
@@ -31,7 +36,7 @@ export default function Sidebar() {
                 </Link>
             </div>
 
-            <nav className="flex-1 space-y-0.5 px-3" aria-label="Main">
+            <nav className="space-y-0.5 px-3" aria-label="Main">
                 {NAV.map((item) => {
                     const active = isActive(item, pathname)
                     const Icon = item.icon
@@ -48,6 +53,39 @@ export default function Sidebar() {
                     )
                 })}
             </nav>
+
+            {/* Airdrop: deliberately not a plain nav row. */}
+            <div className="px-4 pt-5">
+                <Link
+                    href="/airdrop"
+                    aria-current={onAirdrop ? "page" : undefined}
+                    className={`app-airdrop-card ${onAirdrop ? "is-active" : ""}`}
+                >
+                    <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-2">
+                            <Gift className="h-4 w-4 text-[var(--acid)]" />
+                            <span className="utd-pixel text-[10px] text-white">AIRDROP</span>
+                        </span>
+                        {available > 0 && (
+                            <span className="utd-pixel bg-[#fbbf24] px-1.5 py-0.5 text-[7px] text-[#1a1203]">
+                                {available} NEW
+                            </span>
+                        )}
+                    </div>
+                    <div className="mt-2 text-[12px] text-[var(--dim)]">
+                        {connected && data ? (
+                            <>
+                                <span className="font-mono text-[var(--acid)]">{data.totalPoints.toLocaleString()}</span> pts ·{" "}
+                                {data.completed}/{data.tasks.length} tasks
+                            </>
+                        ) : (
+                            "Earn genesis points before launch"
+                        )}
+                    </div>
+                </Link>
+            </div>
+
+            <div className="flex-1" />
 
             <div className="border-t border-[var(--line)] px-5 py-4 font-mono text-[11px] text-[var(--faint)]">
                 Pre-launch build
