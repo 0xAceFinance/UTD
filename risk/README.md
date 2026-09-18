@@ -28,8 +28,10 @@ now wired into the live backend, not just standalone logic.
   `HELD` (matchmaking's `flagForReview()`) instead of settling, and only
   *before* the oracle signs a settlement (once signed, `BattleEscrow.settle()`
   is permissionless, so a flag after signing wouldn't stop the payout).
-  `funded_by` and `shared_device` edges aren't wired up — no on-chain
-  funding-source analysis or device-fingerprinting data source exists yet.
+  `funded_by` is now wired up too (`FE/lib/fundingSource.ts` — a bounded
+  `eth_getLogs` scan for a wallet's earliest inbound stake-token transfer,
+  best-effort), catching a colluding pair that shares no network. `shared_device`
+  still isn't — no device-fingerprinting data source exists yet.
 - **Geofence.** `backend/lib/riskConfig.ts::BLOCKED_COUNTRY_CODES` is the
   (currently empty) real blocklist — the one line that changes once legal
   defines it. Checked in both `app/api/duels/route.ts` (create) and
@@ -54,7 +56,15 @@ buildable in this repo on its own:
   decision) and their SDK/API before there's anything real to integrate against.
 - **Two independent smart contract audits + a public bug bounty.** Needs to be
   commissioned from outside firms once the contracts are feature-complete.
-- **Dispute/HELD review tooling.** The `HELD` state exists end-to-end (a
-  sybil-flagged duel really lands there, `duel.flaggedSybil` is set) but
-  there's no admin UI/workflow for a human reviewer to resolve it — a `HELD`
-  duel today has no route that moves it back to `SETTLING`/`SETTLED`.
+- **Dispute/HELD review process.** The actual human judgment call (was this
+  really collusion?) still needs a person, and there's no admin UI for it yet
+  — but the routes exist: `app/api/admin/duels/[id]/resolve` (confirm the
+  oracle-computed winner if the flag was a false positive, or sign a
+  `voidActive()` refund if not) and `confirm-void` (verifies the refund
+  actually landed on-chain before closing it out in the DB). Gated by a
+  shared-secret header (`FE/lib/adminAuth.ts`), not real admin auth. There's
+  also a fully separate, signature-free fallback now:
+  `BattleEscrow.refundStale()` lets anyone refund both stakes once a duel has
+  sat unsettled 24h past its end time, covering the case where the oracle key
+  itself is unusable (lost, or the winner's address is blacklisted by the
+  stake token) and no signature-based path can ever resolve it.

@@ -1,57 +1,53 @@
-export type Tier = 'Bronze' | 'Silver' | 'Gold' | 'Diamond';
+import { POINTS_CONFIG } from "./config.js";
 
-export interface ComputeMatchPointsInput {
+export interface MatchOutcomeInput {
   buyInUsd: number;
-  winnerReturnPct: number;
-  loserReturnPct: number;
+  winnerReturnPct: number; // e.g. 30 for +30%
+  loserReturnPct: number; // e.g. 10 for +10%
 }
 
-export interface MatchPointsResult {
+export interface MatchPoints {
   winnerPoints: number;
   loserPoints: number;
+  stakeMultiplier: number;
+  marginMultiplier: number;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 /**
- * Calculates tier from lifetime totalPoints.
- * Mirrors CombatRecordNFT.sol tierOf().
- * Bronze: < 5,000
- * Silver: 5,000 - 24,999
- * Gold: 25,000 - 99,999
- * Diamond: >= 100,000
+ * Section 07: winner = base x stake-size multiplier x margin multiplier;
+ * loser = a flat ~25% of the base rate, independent of stake or margin —
+ * participation is rewarded, but nowhere near what winning earns.
  */
-export function tierForPoints(totalPoints: number): Tier {
-  if (totalPoints >= 100_000) return 'Diamond';
-  if (totalPoints >= 25_000) return 'Gold';
-  if (totalPoints >= 5_000) return 'Silver';
-  return 'Bronze';
+export function computeMatchPoints(input: MatchOutcomeInput): MatchPoints {
+  const stakeMultiplier = clamp(
+    (input.buyInUsd / 100) * POINTS_CONFIG.stakeMultiplierPer100Usd,
+    1,
+    POINTS_CONFIG.stakeMultiplierCap
+  );
+
+  const marginGap = Math.max(0, input.winnerReturnPct - input.loserReturnPct);
+  const marginMultiplier = clamp(1 + marginGap / 100, 1, POINTS_CONFIG.marginMultiplierCap);
+
+  const winnerPoints = POINTS_CONFIG.basePoints * stakeMultiplier * marginMultiplier;
+  const loserPoints = POINTS_CONFIG.basePoints * POINTS_CONFIG.loserFlatRate;
+
+  return { winnerPoints, loserPoints, stakeMultiplier, marginMultiplier };
 }
 
-/**
- * Computes points awarded to winner and loser.
- * Both receive > 0 points (participation/consolation), with winner strictly receiving more.
- */
-export function computeMatchPoints(input: ComputeMatchPointsInput): MatchPointsResult {
-  const buyIn = Math.max(1, input.buyInUsd || 10);
-  const winBonus = Math.max(0, input.winnerReturnPct || 0);
-  const loseBonus = Math.max(0, input.loserReturnPct || 0);
+export type Tier = "Bronze" | "Silver" | "Gold" | "Diamond";
 
-  const winnerPoints = Math.max(10, Math.round(buyIn * 1.5 + winBonus * 2));
-  const loserPoints = Math.max(1, Math.round(buyIn * 0.5 + loseBonus * 0.5));
+const TIER_THRESHOLDS: { tier: Tier; min: number }[] = [
+  { tier: "Diamond", min: 100_000 },
+  { tier: "Gold", min: 25_000 },
+  { tier: "Silver", min: 5_000 },
+  { tier: "Bronze", min: 0 },
+];
 
-  return {
-    winnerPoints: winnerPoints > loserPoints ? winnerPoints : loserPoints + 1,
-    loserPoints,
-  };
-}
-
-/**
- * Opponent diversity gate.
- * Prevents farming by capping repeats of the same opponent in recent matches (last 50).
- */
-export function isPointsEligible(recentOpponents: string[], opponent: string): boolean {
-  if (!recentOpponents || recentOpponents.length === 0) return true;
-  const target = opponent.toLowerCase();
-  // In the last 50 opponents, reject if 5 or more matches are against this same opponent
-  const matches = recentOpponents.filter((o) => o.toLowerCase() === target).length;
-  return matches < 5;
+/** Section 07 tier table, driven off lifetime cumulative points (never decreases on redemption). */
+export function tierForPoints(lifetimePoints: number): Tier {
+  return TIER_THRESHOLDS.find((t) => lifetimePoints >= t.min)!.tier;
 }

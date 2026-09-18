@@ -104,17 +104,20 @@ contract RedemptionVaultAdversarialTest is Test {
         vault.redeem(1);
     }
 
-    function test_rateZero_producesZeroValueScheduleAndNothingClaimable() public {
+    /// @dev Previously a zero (or misconfigured near-zero) rate let redeem()
+    /// silently burn the wallet's points for a zero-value vesting schedule --
+    /// markRedeemed() ran regardless of what tokenAmount worked out to. Fixed
+    /// by rejecting the redemption outright before any points are spent.
+    function test_rateZero_redeemRevertsInsteadOfBurningPointsForNothing() public {
         vault.setRate(0);
+        uint256 availableBefore = nft.availablePoints(player);
+
         vm.prank(player);
+        vm.expectRevert("rate too low: this would redeem for zero reward tokens");
         vault.redeem(1_000);
 
-        vm.warp(block.timestamp + 60 days);
-        assertEq(vault.claimableAmount(player), 0);
-
-        vm.prank(player);
-        vm.expectRevert("nothing vested to claim");
-        vault.claim();
+        assertEq(nft.availablePoints(player), availableBefore); // points untouched
+        assertEq(vault.schedulesLength(player), 0); // no zero-value schedule created
     }
 
     // ==================== vesting math boundaries ====================

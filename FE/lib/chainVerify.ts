@@ -35,7 +35,15 @@ export async function verifyDuelCreated(
 }> {
     const receipt = await getSuccessfulReceipt(txHash);
     const events = parseEventLogs({ abi: BattleEscrowFactoryAbi, logs: receipt.logs, eventName: 'DuelCreated' });
-    const event = events.find((e: any) => e.args.creator.toLowerCase() === expectedCreator.toLowerCase());
+    // The address check is load-bearing: without it, a log matching this
+    // event's signature but emitted by an arbitrary (attacker) contract would
+    // decode and be trusted just the same. This is what actually stops a
+    // forged "duel created" event from getting a phantom lobby listed at all.
+    const event = events.find(
+        (e: any) =>
+            e.address.toLowerCase() === CONTRACTS.battleEscrowFactory.toLowerCase() &&
+            e.args.creator.toLowerCase() === expectedCreator.toLowerCase()
+    );
     if (!event) throw new Error('DuelCreated event not found for this wallet in that transaction.');
     const args = (event as any).args;
     return {
@@ -50,6 +58,7 @@ export async function verifyDuelJoined(txHash: `0x${string}`, escrowAddress: str
     const events = parseEventLogs({ abi: BattleEscrowFactoryAbi, logs: receipt.logs, eventName: 'DuelJoined' });
     const event = events.find(
         (e: any) =>
+            e.address.toLowerCase() === CONTRACTS.battleEscrowFactory.toLowerCase() &&
             e.args.duel.toLowerCase() === escrowAddress.toLowerCase() &&
             e.args.opponent.toLowerCase() === expectedOpponent.toLowerCase()
     );
@@ -65,6 +74,25 @@ export async function verifyDuelSettled(txHash: `0x${string}`, escrowAddress: st
     return { winnerSide: Number((event as any).args.winnerSide) as 0 | 1 };
 }
 
+/** Verifies a voidActive() tx really happened on this specific escrow (the HELD-duel
+ * recovery path -- see app/api/admin/duels/[id]/confirm-void/route.ts). */
+export async function verifyDuelVoided(txHash: `0x${string}`, escrowAddress: string): Promise<void> {
+    const receipt = await getSuccessfulReceipt(txHash);
+    const events = parseEventLogs({ abi: BattleEscrowAbi, logs: receipt.logs, eventName: 'Voided' });
+    const event = events.find((e) => e.address.toLowerCase() === escrowAddress.toLowerCase());
+    if (!event) throw new Error('Voided event not found for this duel in that transaction.');
+}
+
+/** Verifies a refundStale() tx really happened on this specific escrow (the
+ * last-resort stuck-duel recovery path -- see
+ * app/api/duels/[id]/refund-stale/route.ts). */
+export async function verifyDuelRefundedStale(txHash: `0x${string}`, escrowAddress: string): Promise<void> {
+    const receipt = await getSuccessfulReceipt(txHash);
+    const events = parseEventLogs({ abi: BattleEscrowAbi, logs: receipt.logs, eventName: 'RefundedStale' });
+    const event = events.find((e) => e.address.toLowerCase() === escrowAddress.toLowerCase());
+    if (!event) throw new Error('RefundedStale event not found for this duel in that transaction.');
+}
+
 /** Verifies a cancelDuel()/expireDuel() tx really happened for this escrow. */
 export async function verifyDuelClosed(
     txHash: `0x${string}`,
@@ -73,6 +101,10 @@ export async function verifyDuelClosed(
 ): Promise<void> {
     const receipt = await getSuccessfulReceipt(txHash);
     const events = parseEventLogs({ abi: BattleEscrowFactoryAbi, logs: receipt.logs, eventName });
-    const event = events.find((e: any) => e.args.duel.toLowerCase() === escrowAddress.toLowerCase());
+    const event = events.find(
+        (e: any) =>
+            e.address.toLowerCase() === CONTRACTS.battleEscrowFactory.toLowerCase() &&
+            e.args.duel.toLowerCase() === escrowAddress.toLowerCase()
+    );
     if (!event) throw new Error(`${eventName} event not found for this duel in that transaction.`);
 }

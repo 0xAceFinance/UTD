@@ -61,8 +61,8 @@ contract BattleEscrowAdversarialTest is Test {
         oracleSigner = vm.addr(oracleSignerKey);
 
         implementation = new BattleEscrow();
-        factory = new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury);
         stakeToken = new MockERC20();
+        factory = new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, address(stakeToken));
 
         stakeToken.mint(creator, 1_000_000e18);
         stakeToken.mint(opponent, 1_000_000e18);
@@ -84,8 +84,8 @@ contract BattleEscrowAdversarialTest is Test {
         factory.joinDuel(duel);
     }
 
-    function _sign(uint256 key, address duel, uint8 winnerSide) internal pure returns (bytes memory) {
-        bytes32 message = keccak256(abi.encodePacked(duel, winnerSide));
+    function _sign(uint256 key, address duel, uint8 winnerSide) internal view returns (bytes memory) {
+        bytes32 message = keccak256(abi.encodePacked(duel, winnerSide, block.chainid));
         bytes32 digest = message.toEthSignedMessageHash();
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
         return abi.encodePacked(r, s, v);
@@ -93,6 +93,21 @@ contract BattleEscrowAdversarialTest is Test {
 
     function _signSettlement(address duel, uint8 winnerSide) internal view returns (bytes memory) {
         return _sign(oracleSignerKey, duel, winnerSide);
+    }
+
+    uint8 constant VOID_MARKER = 2;
+
+    function _signVoid(address duel) internal view returns (bytes memory) {
+        return _sign(oracleSignerKey, duel, VOID_MARKER);
+    }
+
+    /// @dev Drives the two-step oracle signer rotation (propose, warp past the
+    /// timelock, execute) end to end -- the tests care about the post-rotation
+    /// behavior, not re-testing the timelock mechanics on every call site.
+    function _rotateOracleSigner(address newSigner) internal {
+        factory.proposeOracleSigner(newSigner);
+        vm.warp(block.timestamp + factory.ORACLE_SIGNER_TIMELOCK_DELAY());
+        factory.executeOracleSignerRotation();
     }
 
     // ==================== double-action / state-machine abuse ====================
@@ -246,7 +261,7 @@ contract BattleEscrowAdversarialTest is Test {
         // Rotate the oracle signer.
         uint256 newSignerKey = 0xB0B5;
         address newSigner = vm.addr(newSignerKey);
-        factory.setOracleSigner(newSigner);
+        _rotateOracleSigner(newSigner);
 
         vm.expectRevert("invalid oracle signature");
         BattleEscrow(duel).settle(0, staleSig);
@@ -295,6 +310,7 @@ contract BattleEscrowAdversarialTest is Test {
 
     function test_reentrantSettleDuringPayoutCannotDoubleSettle() public {
         ReentrantERC20 hostileToken = new ReentrantERC20();
+        factory.setApprovedStakeToken(address(hostileToken));
         hostileToken.mint(creator, 1_000e18);
         hostileToken.mint(opponent, 1_000e18);
         vm.prank(creator);
@@ -352,6 +368,7 @@ contract BattleEscrowAdversarialTest is Test {
         buyIn = bound(buyIn, 1, type(uint256).max / 20_000);
 
         MockERC20 token = new MockERC20();
+        factory.setApprovedStakeToken(address(token));
         token.mint(creator, buyIn);
         token.mint(opponent, buyIn);
         vm.prank(creator);
@@ -437,6 +454,7 @@ contract BattleEscrowAdversarialTest is Test {
     function testFuzz_oddPot_roundingFavorsTreasuryNotWinner_andNeverLeaksOrCreatesFunds(uint256 buyIn) public {
         buyIn = bound(buyIn, 1, 1_000_000e18);
         MockERC20 token = new MockERC20();
+        factory.setApprovedStakeToken(address(token));
         token.mint(creator, buyIn);
         token.mint(opponent, buyIn);
         vm.prank(creator);
@@ -460,5 +478,231 @@ contract BattleEscrowAdversarialTest is Test {
         // Any floor-division remainder falls to the platform side, never the winner.
         assertGe(platformAmount, pot - (pot * 8000) / 10000);
         assertLe(winnerAmount * 10000, pot * 8000);
+    }
+
+    // ==================== voidActive (HELD recovery) ====================
+
+    function test_voidActiveRefundsBothStakesAndMarksRefunded() public {
+        address duel = _createAndActivateDuel();
+        uint256 creatorBalanceBefore = stakeToken.balanceOf(creator);
+        uint256 opponentBalanceBefore = stakeToken.balanceOf(opponent);
+
+        BattleEscrow(duel).voidActive(_signVoid(duel));
+
+        assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Refunded));
+        assertEq(stakeToken.balanceOf(creator), creatorBalanceBefore + BUY_IN);
+        assertEq(stakeToken.balanceOf(opponent), opponentBalanceBefore + BUY_IN);
+        assertEq(stakeToken.balanceOf(duel), 0);
+    }
+
+    function test_voidActiveIsPermissionless_anyoneCanSubmitGivenAValidSignature() public {
+        address duel = _createAndActivateDuel();
+        vm.prank(rando);
+        BattleEscrow(duel).voidActive(_signVoid(duel));
+        assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Refunded));
+    }
+
+    function test_voidActiveRejectsAnOpenUnactivatedDuel() public {
+        address duel = _createDuel();
+        vm.expectRevert("not active");
+        BattleEscrow(duel).voidActive(_signVoid(duel));
+    }
+
+    function test_voidActiveRejectsASettledDuel() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + 1);
+        BattleEscrow(duel).settle(0, _signSettlement(duel, 0));
+
+        vm.expectRevert("not active");
+        BattleEscrow(duel).voidActive(_signVoid(duel));
+    }
+
+    function test_cannotDoubleVoid() public {
+        address duel = _createAndActivateDuel();
+        bytes memory sig = _signVoid(duel);
+        BattleEscrow(duel).voidActive(sig);
+
+        vm.expectRevert("not active");
+        BattleEscrow(duel).voidActive(sig);
+    }
+
+    function test_voidActiveRejectsInvalidSignature() public {
+        address duel = _createAndActivateDuel();
+        uint256 wrongKey = 0xBAD;
+        vm.expectRevert("invalid oracle signature");
+        BattleEscrow(duel).voidActive(_sign(wrongKey, duel, VOID_MARKER));
+    }
+
+    /// @dev A signed settlement result must never be usable to void a match instead,
+    /// and vice versa -- the two message spaces are disjoint by construction
+    /// (VOID_MARKER=2 falls outside settle()'s accepted 0/1 range).
+    function test_settleSignatureCannotBeReplayedAsAVoidSignature() public {
+        address duel = _createAndActivateDuel();
+        bytes memory settleSig = _signSettlement(duel, 0);
+        vm.expectRevert("invalid oracle signature");
+        BattleEscrow(duel).voidActive(settleSig);
+    }
+
+    function test_voidSignatureCannotBeReplayedAsASettleSignature() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + 1);
+        bytes memory voidSig = _signVoid(duel);
+        vm.expectRevert("bad side"); // VOID_MARKER (2) fails settle()'s own side check first
+        BattleEscrow(duel).settle(VOID_MARKER, voidSig);
+    }
+
+    // ==================== chain-id-bound signatures ====================
+
+    function test_settleRejectsASignatureSignedForADifferentChainId() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + 1);
+
+        bytes32 wrongChainMessage = keccak256(abi.encodePacked(duel, uint8(0), uint256(999)));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(oracleSignerKey, wrongChainMessage.toEthSignedMessageHash());
+        bytes memory wrongChainSig = abi.encodePacked(r, s, v);
+
+        vm.expectRevert("invalid oracle signature");
+        BattleEscrow(duel).settle(0, wrongChainSig);
+    }
+
+    function test_voidActiveRejectsASignatureSignedForADifferentChainId() public {
+        address duel = _createAndActivateDuel();
+
+        bytes32 wrongChainMessage = keccak256(abi.encodePacked(duel, VOID_MARKER, uint256(999)));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(oracleSignerKey, wrongChainMessage.toEthSignedMessageHash());
+        bytes memory wrongChainSig = abi.encodePacked(r, s, v);
+
+        vm.expectRevert("invalid oracle signature");
+        BattleEscrow(duel).voidActive(wrongChainSig);
+    }
+
+    // ==================== refundStale (last-resort recovery) ====================
+
+    function test_refundStaleRefundsBothStakesOnceGracePeriodElapses() public {
+        address duel = _createAndActivateDuel();
+        uint256 creatorBalanceBefore = stakeToken.balanceOf(creator);
+        uint256 opponentBalanceBefore = stakeToken.balanceOf(opponent);
+
+        vm.warp(block.timestamp + DURATION + BattleEscrow(duel).STALE_REFUND_GRACE_PERIOD() + 1);
+        BattleEscrow(duel).refundStale();
+
+        assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Refunded));
+        assertEq(stakeToken.balanceOf(creator), creatorBalanceBefore + BUY_IN);
+        assertEq(stakeToken.balanceOf(opponent), opponentBalanceBefore + BUY_IN);
+    }
+
+    function test_refundStaleIsPermissionless_anyoneCanSubmitIt() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + BattleEscrow(duel).STALE_REFUND_GRACE_PERIOD() + 1);
+
+        vm.prank(rando);
+        BattleEscrow(duel).refundStale();
+        assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Refunded));
+    }
+
+    function test_refundStaleRejectsBeforeGracePeriodElapses() public {
+        address duel = _createAndActivateDuel();
+        // Battle just ended -- well within the grace period, still recoverable normally.
+        vm.warp(block.timestamp + DURATION + 1);
+
+        vm.expectRevert("not stale yet");
+        BattleEscrow(duel).refundStale();
+    }
+
+    function test_refundStaleRejectsOneSecondBeforeGracePeriodElapses() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + BattleEscrow(duel).STALE_REFUND_GRACE_PERIOD() - 1);
+
+        vm.expectRevert("not stale yet");
+        BattleEscrow(duel).refundStale();
+    }
+
+    function test_refundStaleSucceedsExactlyAtGracePeriodBoundary() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + BattleEscrow(duel).STALE_REFUND_GRACE_PERIOD());
+
+        BattleEscrow(duel).refundStale();
+        assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Refunded));
+    }
+
+    function test_refundStaleRejectsAnOpenUnactivatedDuel() public {
+        address duel = _createDuel();
+        vm.warp(block.timestamp + BattleEscrow(duel).STALE_REFUND_GRACE_PERIOD() + 1);
+
+        vm.expectRevert("not active");
+        BattleEscrow(duel).refundStale();
+    }
+
+    function test_refundStaleRejectsAnAlreadySettledDuel() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + 1);
+        BattleEscrow(duel).settle(0, _signSettlement(duel, 0));
+
+        vm.warp(block.timestamp + BattleEscrow(duel).STALE_REFUND_GRACE_PERIOD() + 1);
+        vm.expectRevert("not active");
+        BattleEscrow(duel).refundStale();
+    }
+
+    function test_refundStaleRejectsAnAlreadyVoidedDuel() public {
+        address duel = _createAndActivateDuel();
+        BattleEscrow(duel).voidActive(_signVoid(duel));
+
+        vm.warp(block.timestamp + DURATION + BattleEscrow(duel).STALE_REFUND_GRACE_PERIOD() + 1);
+        vm.expectRevert("not active");
+        BattleEscrow(duel).refundStale();
+    }
+
+    function test_cannotDoubleRefundStale() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + BattleEscrow(duel).STALE_REFUND_GRACE_PERIOD() + 1);
+        BattleEscrow(duel).refundStale();
+
+        vm.expectRevert("not active");
+        BattleEscrow(duel).refundStale();
+    }
+
+    function test_refundStaleStillWorksEvenIfOracleSignerIsUnavailable() public {
+        // Simulates the exact scenario refundStale() exists for: the oracle
+        // key is gone (rotated to a black hole address here, standing in for
+        // "lost"), so neither settle() nor voidActive() can ever produce a
+        // valid signature again -- refundStale() needs none.
+        address duel = _createAndActivateDuel();
+        _rotateOracleSigner(address(0xdEaD));
+
+        vm.warp(block.timestamp + DURATION + BattleEscrow(duel).STALE_REFUND_GRACE_PERIOD() + 1);
+        BattleEscrow(duel).refundStale();
+        assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Refunded));
+    }
+
+    function test_voidActiveRejectsSignatureFromAFormerOracleSignerAfterRotation() public {
+        address duel = _createAndActivateDuel();
+        bytes memory staleSig = _signVoid(duel);
+
+        uint256 newSignerKey = 0xB0B0;
+        _rotateOracleSigner(vm.addr(newSignerKey));
+
+        vm.expectRevert("invalid oracle signature");
+        BattleEscrow(duel).voidActive(staleSig);
+    }
+
+    function test_voidActiveSignatureCannotBeReplayedAgainstADifferentDuelClone() public {
+        address duelA = _createAndActivateDuel();
+
+        address creator2 = address(0x3003);
+        address opponent2 = address(0x3004);
+        stakeToken.mint(creator2, 1_000e18);
+        stakeToken.mint(opponent2, 1_000e18);
+        vm.prank(creator2);
+        stakeToken.approve(address(factory), type(uint256).max);
+        vm.prank(opponent2);
+        stakeToken.approve(address(factory), type(uint256).max);
+        vm.prank(creator2);
+        address duelB = factory.createDuel(address(stakeToken), BUY_IN, 0, DURATION, "A", "B");
+        vm.prank(opponent2);
+        factory.joinDuel(duelB);
+
+        bytes memory sigForA = _signVoid(duelA);
+        vm.expectRevert("invalid oracle signature");
+        BattleEscrow(duelB).voidActive(sigForA);
     }
 }

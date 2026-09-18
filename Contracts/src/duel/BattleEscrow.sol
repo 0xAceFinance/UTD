@@ -35,6 +35,18 @@ contract BattleEscrow is ReentrancyGuard {
 
     uint256 public constant MAX_OPEN_WINDOW = 60 minutes;
 
+    /// @dev How long past endTime an Active duel must sit unsettled before
+    /// refundStale() becomes callable — see refundStale() below. Generous
+    /// margin over normal settlement (which happens within seconds of
+    /// endTime), so this only ever fires on a genuinely stuck duel.
+    uint256 public constant STALE_REFUND_GRACE_PERIOD = 24 hours;
+
+    /// @dev Sentinel winnerSide value used only in voidActive()'s signed message.
+    /// settle() only ever accepts 0 or 1 (see its "bad side" check), so a void
+    /// signature can never be replayed as a settle signature and vice versa —
+    /// the two message spaces never overlap.
+    uint8 private constant VOID_MARKER = 2;
+
     address public factory;
     address public stakeToken;
     address public creator;
@@ -57,6 +69,8 @@ contract BattleEscrow is ReentrancyGuard {
     event Cancelled(address indexed by);
     event Expired();
     event Settled(uint8 winnerSide, address indexed winner, uint256 winnerAmount, uint256 platformAmount);
+    event Voided();
+    event RefundedStale();
 
     modifier onlyFactory() {
         require(msg.sender == factory, "only factory");
@@ -143,16 +157,20 @@ contract BattleEscrow is ReentrancyGuard {
      * @dev Settles the match 80% to the winner / 20% to the platform. Anyone
      * may submit this transaction — what authorizes it is `signature`, an
      * ECDSA signature from the factory's oracleSigner over
-     * (this contract, _winnerSide). That is the "permissionless fallback":
-     * if the platform's own keeper bot is down, any player (or anyone else
-     * holding the signed result) can still push settlement through.
+     * (this contract, _winnerSide, chainid). That is the "permissionless
+     * fallback": if the platform's own keeper bot is down, any player (or
+     * anyone else holding the signed result) can still push settlement
+     * through. chainid is folded into the signed message so a settlement
+     * signature from one chain can never be replayed on another (relevant if
+     * this is ever deployed to more than one chain from the same deployer —
+     * plain CREATE clone addresses could otherwise coincide across chains).
      */
     function settle(uint8 _winnerSide, bytes calldata signature) external nonReentrant {
         require(status == Status.Active, "not active");
         require(block.timestamp >= endTime, "battle still live");
         require(_winnerSide == 0 || _winnerSide == 1, "bad side");
 
-        bytes32 message = keccak256(abi.encodePacked(address(this), _winnerSide));
+        bytes32 message = keccak256(abi.encodePacked(address(this), _winnerSide, block.chainid));
         address recovered = message.toEthSignedMessageHash().recover(signature);
         require(recovered == IBattleEscrowFactory(factory).oracleSigner(), "invalid oracle signature");
 
@@ -170,5 +188,52 @@ contract BattleEscrow is ReentrancyGuard {
         IERC20(stakeToken).safeTransfer(treasury, platformAmount);
 
         emit Settled(_winnerSide, winner, winnerAmount, platformAmount);
+    }
+
+    /**
+     * @dev Refunds both stakes for an Active duel that was flagged for
+     * off-chain review (e.g. suspected wallet collusion) instead of settling
+     * it — the recovery path for a match that would otherwise be stuck with
+     * no way to resolve it. Same permissionless-given-a-signature pattern as
+     * settle(): anyone may submit this transaction, but it's only valid with
+     * an ECDSA signature from the factory's oracleSigner over a message that
+     * can never collide with settle()'s (see VOID_MARKER above).
+     */
+    function voidActive(bytes calldata signature) external nonReentrant {
+        require(status == Status.Active, "not active");
+
+        bytes32 message = keccak256(abi.encodePacked(address(this), VOID_MARKER, block.chainid));
+        address recovered = message.toEthSignedMessageHash().recover(signature);
+        require(recovered == IBattleEscrowFactory(factory).oracleSigner(), "invalid oracle signature");
+
+        status = Status.Refunded;
+
+        IERC20(stakeToken).safeTransfer(creator, buyIn);
+        IERC20(stakeToken).safeTransfer(opponent, buyIn);
+
+        emit Voided();
+    }
+
+    /**
+     * @dev The last-resort recovery path: refunds both stakes for an Active
+     * duel that's sat unsettled for STALE_REFUND_GRACE_PERIOD past its end
+     * time, no signature required. settle() and voidActive() both depend on
+     * a working oracle signature; this covers the case where neither is
+     * available at all — the oracle key is lost, or the winner's address is
+     * blacklisted by the stake token (e.g. USDC) so settle()'s transfer
+     * always reverts. Permissionless and requires no signature by design:
+     * either player (or anyone else) can reclaim both stakes once it's clear
+     * the match was never going to resolve normally.
+     */
+    function refundStale() external nonReentrant {
+        require(status == Status.Active, "not active");
+        require(block.timestamp >= endTime + STALE_REFUND_GRACE_PERIOD, "not stale yet");
+
+        status = Status.Refunded;
+
+        IERC20(stakeToken).safeTransfer(creator, buyIn);
+        IERC20(stakeToken).safeTransfer(opponent, buyIn);
+
+        emit RefundedStale();
     }
 }

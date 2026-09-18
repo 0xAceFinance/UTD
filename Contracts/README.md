@@ -63,7 +63,8 @@ signature.
 One instance per 1v1 duel, deployed as an EIP-1167 minimal-proxy clone by
 `BattleEscrowFactory`. Holds exactly one match's stablecoin stake, isolated
 from every other match. States: `Open -> Active -> Settled`, or `Open ->
-Refunded` (via `cancel`/`expire`).
+Refunded` (via `cancel`/`expire`), or `Active -> Refunded` (via
+`voidActive`/`refundStale`).
 
 - `initialize(creator, stakeToken, buyIn, creatorSide, durationSeconds,
   tokenASymbol, tokenBSymbol) external` — callable exactly once per clone
@@ -84,17 +85,35 @@ Refunded` (via `cancel`/`expire`).
 - `settle(uint8 winnerSide, bytes calldata signature) external` — also
   **permissionless**. Requires `status == Active` and `block.timestamp >=
   endTime`; the actual authorization is an ECDSA signature over
-  `keccak256(abi.encodePacked(address(this), winnerSide))` that must recover
-  to `BattleEscrowFactory.oracleSigner()`. Pays the winner 80% of the pot
-  (`buyIn * 2`) and the platform treasury the remaining 20%; the loser
-  receives nothing on-chain. This is the "if the keeper bot is down, anyone
-  holding the signed result can still push settlement through" fallback.
+  `keccak256(abi.encodePacked(address(this), winnerSide, block.chainid))`
+  that must recover to `BattleEscrowFactory.oracleSigner()` (chain ID is
+  folded in so a signature from one chain can never settle a same-address
+  duel on another). Pays the winner 80% of the pot (`buyIn * 2`) and the
+  platform treasury the remaining 20%; the loser receives nothing on-chain.
+  This is the "if the keeper bot is down, anyone holding the signed result
+  can still push settlement through" fallback.
+- `voidActive(bytes calldata signature) external` — the HELD-match recovery
+  path: refunds both stakes for an `Active` duel instead of settling it (e.g.
+  a suspected-collusion flag from the backend's risk check, see
+  `../risk/README.md`). Same signature scheme as `settle`, but over a
+  sentinel `VOID_MARKER` value outside `settle`'s accepted 0/1 range, so the
+  two message spaces never collide.
+- `refundStale() external` — the last-resort recovery path, **no signature
+  required**: once an `Active` duel has sat unsettled for
+  `STALE_REFUND_GRACE_PERIOD` (24h) past `endTime`, anyone can refund both
+  stakes. Covers what `settle`/`voidActive` can't: the oracle key is lost, or
+  the winner's address is blacklisted by the stake token so `settle`'s
+  transfer always reverts.
 
-**Trust model:** the factory owner can only rotate `oracleSigner` and
-`platformTreasury` — there is no owner withdrawal path anywhere in
-`BattleEscrow`; funds only ever leave via `settle`, `cancel`, or `expire`.
-Settlement correctness rests entirely on the oracle signer's key being honest
-(it single-handedly decides which side "won").
+**Trust model:** the factory owner can rotate `platformTreasury` instantly,
+but oracle signer rotation goes through a 24h timelock
+(`proposeOracleSigner` → `executeOracleSignerRotation`) — rotating the
+signer is real influence over every currently-Active duel's outcome, so a
+compromised or malicious owner can't do it instantly and unnoticed. There is
+still no owner withdrawal path anywhere in `BattleEscrow`; funds only ever
+leave via `settle`, `voidActive`, `refundStale`, `cancel`, or `expire`.
+Settlement correctness (short of the `refundStale` fallback) rests entirely
+on the oracle signer's key being honest.
 
 ### `src/duel/IBattleEscrowFactory.sol` / `src/duel/BattleEscrowFactory.sol`
 
@@ -103,17 +122,24 @@ a duel; every match is a cheap `Clones.clone()` of one audited `BattleEscrow`
 implementation.
 
 - `createDuel(stakeToken, buyIn, creatorSide, durationSeconds, tokenASymbol,
-  tokenBSymbol) external returns (address duel)` — validates `creatorSide in
-  {0,1}` and `durationSeconds in [MIN_DURATION=15min, MAX_DURATION=40min]`,
-  clones the implementation, pulls the creator's stake straight into the new
-  clone, then calls `initialize` on it.
-- `joinDuel(address duel) external` — reads `joinTerms()`, pulls the
-  opponent's matching stake into the clone, calls `activate(msg.sender)`.
-- `cancelDuel(address duel)` / `expireDuel(address duel)` — thin pass-throughs
-  to the clone plus a factory-level event.
-- `setOracleSigner` / `setPlatformTreasury` (`onlyOwner`) — the only two
-  owner-gated actions in the whole duel system; the owner can never move user
-  funds directly.
+  tokenBSymbol) external returns (address duel)` — validates `stakeToken ==
+  approvedStakeToken` (the one stake token this factory accepts — blocks
+  farming points with a self-minted worthless token, or a rebasing/fee-taking
+  token that could leave payouts stuck), `creatorSide in {0,1}`, and
+  `durationSeconds in [MIN_DURATION=15min, MAX_DURATION=40min]`, clones the
+  implementation, pulls the creator's stake straight into the new clone, then
+  calls `initialize` on it. Registers the clone in `isDuel`.
+- `joinDuel(address duel)` / `cancelDuel(address duel)` /
+  `expireDuel(address duel)` — all require `isDuel[duel]` first (a duel must
+  have actually been produced by `createDuel`, not an arbitrary address) —
+  `joinDuel` reads `joinTerms()`, pulls the opponent's matching stake into the
+  clone, calls `activate(msg.sender)`; the other two are thin pass-throughs to
+  the clone plus a factory-level event.
+- `proposeOracleSigner(address)` (`onlyOwner`) + `executeOracleSignerRotation()`
+  (permissionless, after `ORACLE_SIGNER_TIMELOCK_DELAY = 24h`) — the two-step,
+  timelocked oracle signer rotation (see trust model above).
+- `setPlatformTreasury` / `setApprovedStakeToken` (`onlyOwner`, instant) — the
+  owner can never move user funds directly.
 - `allDuelsLength()` / `allDuels(i)` — enumeration of every duel ever created.
 
 ### `src/rewards/ICombatRecordNFT.sol` / `src/rewards/CombatRecordNFT.sol`
@@ -188,7 +214,8 @@ bounded regardless of how many points a wallet has banked.
    itself has no awareness of token prices or trading — it only holds stake).
 5. **Oracle attestation.** After `endTime`, the backend's oracle determines
    the winning side and signs `keccak256(abi.encodePacked(duelAddress,
-   winnerSide))` with the `oracleSigner` key registered on the factory.
+   winnerSide, block.chainid))` with the `oracleSigner` key registered on the
+   factory.
 6. **Settle.** Anyone (typically a backend keeper, but permissionlessly any
    address) calls `BattleEscrow.settle(winnerSide, signature)` on the clone.
    The clone verifies the signature against `factory.oracleSigner()`, pays
@@ -246,6 +273,9 @@ PLATFORM_TREASURY_ADDRESS=<address the 20% platform cut is sent to> \
 DEPLOY_MOCK_STAKE_TOKEN=true \
   forge script script/DeployDuel.s.sol:DeployDuel --rpc-url <rpc_url> --broadcast
 ```
+
+(Omit `DEPLOY_MOCK_STAKE_TOKEN` and set `STAKE_TOKEN_ADDRESS=<real stablecoin
+address>` instead for anything beyond local/testnet use.)
 
 There is no `Deploy.s.sol`/`DeployDuel.s.sol` equivalent yet for
 `CombatRecordNFT`/`RedemptionVault` — deploy those manually (via `forge

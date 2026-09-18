@@ -133,3 +133,22 @@ export async function settleDuelOnChain(
     await waitForTransactionReceipt(wagmiConfig, { chainId: CONTRACTS.chainId, hash });
     return hash;
 }
+
+/**
+ * The last-resort recovery path: refunds both stakes for a duel that's sat
+ * unsettled for STALE_REFUND_GRACE_PERIOD past its end time (Contracts/src/duel/BattleEscrow.sol).
+ * Permissionless and needs no signature -- either player (or anyone else) can
+ * call this once it's clear the match was never going to resolve normally.
+ * Called directly on the escrow, not through the factory, same as settle().
+ */
+export async function refundStaleDuelOnChain(escrowAddress: `0x${string}`): Promise<`0x${string}`> {
+    const hash = await writeContract(wagmiConfig, {
+        chainId: CONTRACTS.chainId,
+        address: escrowAddress,
+        abi: BattleEscrowAbi,
+        functionName: 'refundStale',
+        args: [],
+    });
+    await waitForTransactionReceipt(wagmiConfig, { chainId: CONTRACTS.chainId, hash });
+    return hash;
+}

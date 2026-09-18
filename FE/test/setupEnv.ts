@@ -23,3 +23,13 @@ process.env.ORACLE_SIGNER_PRIVATE_KEY =
 
 process.env.NEXT_PUBLIC_RPC_URL = process.env.NEXT_PUBLIC_RPC_URL ?? 'http://127.0.0.1:8545';
 process.env.NEXT_PUBLIC_CHAIN_ID = process.env.NEXT_PUBLIC_CHAIN_ID ?? '31337';
+
+// Matches test/helpers/chainFixtures.ts's ADDR.factory -- lib/chainVerify.ts
+// filters decoded events by this address (CONTRACTS.battleEscrowFactory), so
+// it needs a real, consistent value here rather than config/contracts.ts's
+// '' fallback for an unset env var.
+process.env.NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS =
+  process.env.NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS ?? '0x4000000000000000000000000000000000000001';
+
+// Test-only value for the internal admin routes' shared-secret gate (lib/adminAuth.ts).
+process.env.ADMIN_API_SECRET = process.env.ADMIN_API_SECRET ?? 'test-admin-secret';

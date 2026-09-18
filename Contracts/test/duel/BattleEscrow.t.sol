@@ -29,8 +29,8 @@ contract BattleEscrowTest is Test {
         oracleSigner = vm.addr(oracleSignerKey);
 
         implementation = new BattleEscrow();
-        factory = new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury);
         stakeToken = new MockERC20();
+        factory = new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, address(stakeToken));
 
         stakeToken.mint(creator, 1_000e18);
         stakeToken.mint(opponent, 1_000e18);
@@ -47,7 +47,7 @@ contract BattleEscrowTest is Test {
     }
 
     function _signSettlement(address duel, uint8 winnerSide) internal returns (bytes memory) {
-        bytes32 message = keccak256(abi.encodePacked(duel, winnerSide));
+        bytes32 message = keccak256(abi.encodePacked(duel, winnerSide, block.chainid));
         bytes32 digest = message.toEthSignedMessageHash();
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(oracleSignerKey, digest);
         return abi.encodePacked(r, s, v);
@@ -141,7 +141,7 @@ contract BattleEscrowTest is Test {
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 wrongKey = 0xBAD;
-        bytes32 message = keccak256(abi.encodePacked(duel, uint8(0)));
+        bytes32 message = keccak256(abi.encodePacked(duel, uint8(0), block.chainid));
         bytes32 digest = message.toEthSignedMessageHash();
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(wrongKey, digest);
         bytes memory badSig = abi.encodePacked(r, s, v);
@@ -199,6 +199,6 @@ contract BattleEscrowTest is Test {
     function test_onlyOwnerCanUpdateOracleSignerOrTreasury() public {
         vm.prank(rando);
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", rando));
-        factory.setOracleSigner(rando);
+        factory.proposeOracleSigner(rando);
     }
 }

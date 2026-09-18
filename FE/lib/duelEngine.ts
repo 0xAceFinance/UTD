@@ -7,6 +7,7 @@ import { signSettlement } from '@/lib/oracleSigner';
 import { toLobbySnapshot, applyLobby } from '@/lib/lobbyAdapter';
 import CombatRecord from '@/lib/models/CombatRecord';
 import WalletSighting from '@/lib/models/WalletSighting';
+import Duel from '@/lib/models/Duel';
 import type { IDuel, TokenSide } from '@/lib/models/Duel';
 
 /**
@@ -81,11 +82,39 @@ export async function simulateTick(duel: IDuel): Promise<void> {
 }
 
 /**
- * Real signal for @mcapduel/risk's wallet-clustering sybil check (Section
+ * Groups a wallet-sighting field's non-empty values and unions every wallet
+ * that shares one into the same cluster -- e.g. every wallet seen from IP X,
+ * or every wallet first funded by address Y.
+ */
+interface SightingLike {
+  wallet: string;
+  ip?: string;
+  fundedBy?: string;
+}
+
+function unionSharedValues(graph: WalletClusterGraph, sightings: SightingLike[], keyOf: (s: SightingLike) => string | undefined) {
+  const walletsByKey = new Map<string, Set<string>>();
+  for (const s of sightings) {
+    const key = keyOf(s);
+    if (!key) continue;
+    const wallets = walletsByKey.get(key) ?? new Set<string>();
+    wallets.add(s.wallet);
+    walletsByKey.set(key, wallets);
+  }
+  for (const wallets of walletsByKey.values()) {
+    const [first, ...rest] = [...wallets];
+    for (const wallet of rest) graph.union(first, wallet);
+  }
+}
+
+/**
+ * Real signals for @mcapduel/risk's wallet-clustering sybil check (Section
  * 05): true if the creator and opponent were ever seen from the same
- * request IP (lib/models/WalletSighting.ts, recorded on create/join). This
- * has real false positives (NAT, shared wifi, VPNs), which is exactly why a
- * hit routes the match to HELD for human review rather than voiding it.
+ * request IP, or were ever first funded by the same address
+ * (lib/models/WalletSighting.ts, recorded on create/join). Both have real
+ * false positives (NAT/shared wifi/VPN; a shared exchange withdrawal), which
+ * is exactly why a hit routes the match to HELD for human review rather
+ * than voiding it.
  */
 async function isSybilMatch(duel: IDuel): Promise<boolean> {
   if (!duel.opponentWallet) return false;
@@ -96,21 +125,14 @@ async function isSybilMatch(duel: IDuel): Promise<boolean> {
   if (sightings.length === 0) return false;
 
   const graph = new WalletClusterGraph();
-  const walletsByIp = new Map<string, Set<string>>();
-  for (const s of sightings) {
-    const wallets = walletsByIp.get(s.ip) ?? new Set<string>();
-    wallets.add(s.wallet);
-    walletsByIp.set(s.ip, wallets);
-  }
-  for (const wallets of walletsByIp.values()) {
-    const [first, ...rest] = [...wallets];
-    for (const wallet of rest) graph.union(first, wallet);
-  }
+  const typedSightings = sightings as unknown as SightingLike[];
+  unionSharedValues(graph, typedSightings, (s) => s.ip);
+  unionSharedValues(graph, typedSightings, (s) => s.fundedBy);
 
   return isSuspectedSybilMatch(graph, duel.creatorWallet, duel.opponentWallet);
 }
 
-function computeWinnerSide(duel: IDuel): 0 | 1 {
+export function computeWinnerSide(duel: IDuel): 0 | 1 {
   const returnPctA =
     ((duel.tokenA.sustainedPeakMarketCapUsd - duel.tokenA.startMarketCapUsd) / duel.tokenA.startMarketCapUsd) * 100;
   const returnPctB =
@@ -135,11 +157,20 @@ function computeWinnerSide(duel: IDuel): 0 | 1 {
  *  - for a legacy off-chain-only duel (created before on-chain integration
  *    existed): settles immediately in the database, same as before.
  *
- * Mutates `duel` and persists it. Safe to call repeatedly.
+ * Mutates `duel` and persists it. Safe to call repeatedly -- and safe to call
+ * concurrently for the same duel: the LIVE -> SETTLING claim below is an
+ * atomic compare-and-swap, so at most one concurrent caller (multiple
+ * frontend polls, browser tabs, or serverless instances racing the same
+ * duel right at its end time) ever proceeds past it. Without this, two
+ * concurrent callers could both pass the `duel.status !== 'LIVE'` check
+ * above before either saved, and both go on to award points twice.
  */
 export async function maybeSettle(duel: IDuel): Promise<void> {
   if (duel.status !== 'LIVE' || !duel.startTime || !duel.endTime) return;
   if (Date.now() < duel.endTime.getTime()) return;
+
+  const claimed = await Duel.findOneAndUpdate({ _id: duel._id, status: 'LIVE' }, { $set: { status: 'SETTLING' } });
+  if (!claimed) return;
 
   // One last real read (bypassing the sample-interval throttle isn't needed --
   // refreshSide already fetches if the last sample is stale, which it will be

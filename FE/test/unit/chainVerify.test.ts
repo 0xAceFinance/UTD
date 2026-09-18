@@ -85,6 +85,28 @@ describe('lib/chainVerify', () => {
       const { verifyDuelCreated } = await import('@/lib/chainVerify');
       await expect(verifyDuelCreated(TX_HASH, ADDR.creator)).rejects.toThrow(/did not succeed/);
     });
+
+    it('fails closed when a DuelCreated-shaped event is emitted by anything other than the real factory (forged event)', async () => {
+      const forgedLog = buildLog({
+        address: ADDR.otherEscrow, // standing in for an attacker-controlled contract, not CONTRACTS.battleEscrowFactory
+        abi: BattleEscrowFactoryAbi,
+        eventName: 'DuelCreated',
+        args: {
+          duel: ADDR.escrow,
+          creator: ADDR.creator,
+          stakeToken: ADDR.stakeToken,
+          buyIn: 100_000_000_000_000_000_000n,
+          creatorSide: 0,
+          durationSeconds: 900n,
+          tokenASymbol: 'FOO',
+          tokenBSymbol: 'BAR',
+        },
+      });
+      getTransactionReceipt.mockResolvedValue(buildReceipt([forgedLog]));
+
+      const { verifyDuelCreated } = await import('@/lib/chainVerify');
+      await expect(verifyDuelCreated(TX_HASH, ADDR.creator)).rejects.toThrow(/DuelCreated event not found/);
+    });
   });
 
   describe('verifyDuelJoined', () => {
@@ -109,6 +131,19 @@ describe('lib/chainVerify', () => {
         args: { duel: ADDR.otherEscrow, opponent: ADDR.opponent },
       });
       getTransactionReceipt.mockResolvedValue(buildReceipt([log]));
+
+      const { verifyDuelJoined } = await import('@/lib/chainVerify');
+      await expect(verifyDuelJoined(TX_HASH, ADDR.escrow, ADDR.opponent)).rejects.toThrow(/DuelJoined event not found/);
+    });
+
+    it('fails closed when a DuelJoined-shaped event is emitted by anything other than the real factory (forged event)', async () => {
+      const forgedLog = buildLog({
+        address: ADDR.otherEscrow, // not CONTRACTS.battleEscrowFactory
+        abi: BattleEscrowFactoryAbi,
+        eventName: 'DuelJoined',
+        args: { duel: ADDR.escrow, opponent: ADDR.opponent },
+      });
+      getTransactionReceipt.mockResolvedValue(buildReceipt([forgedLog]));
 
       const { verifyDuelJoined } = await import('@/lib/chainVerify');
       await expect(verifyDuelJoined(TX_HASH, ADDR.escrow, ADDR.opponent)).rejects.toThrow(/DuelJoined event not found/);
@@ -187,6 +222,37 @@ describe('lib/chainVerify', () => {
 
       const { verifyDuelClosed } = await import('@/lib/chainVerify');
       await expect(verifyDuelClosed(TX_HASH, ADDR.escrow, 'DuelCancelled')).rejects.toThrow(/DuelCancelled event not found/);
+    });
+
+    it('fails closed when a DuelCancelled-shaped event is emitted by anything other than the real factory (forged event)', async () => {
+      const forgedLog = buildLog({
+        address: ADDR.otherEscrow, // not CONTRACTS.battleEscrowFactory
+        abi: BattleEscrowFactoryAbi,
+        eventName: 'DuelCancelled',
+        args: { duel: ADDR.escrow, canceller: ADDR.creator },
+      });
+      getTransactionReceipt.mockResolvedValue(buildReceipt([forgedLog]));
+
+      const { verifyDuelClosed } = await import('@/lib/chainVerify');
+      await expect(verifyDuelClosed(TX_HASH, ADDR.escrow, 'DuelCancelled')).rejects.toThrow(/DuelCancelled event not found/);
+    });
+  });
+
+  describe('verifyDuelRefundedStale', () => {
+    it('decodes a real RefundedStale event for the right escrow', async () => {
+      const log = buildLog({ address: ADDR.escrow, abi: BattleEscrowAbi, eventName: 'RefundedStale', args: {} });
+      getTransactionReceipt.mockResolvedValue(buildReceipt([log]));
+
+      const { verifyDuelRefundedStale } = await import('@/lib/chainVerify');
+      await expect(verifyDuelRefundedStale(TX_HASH, ADDR.escrow)).resolves.toBeUndefined();
+    });
+
+    it('fails closed when the RefundedStale event is emitted by a different escrow address', async () => {
+      const log = buildLog({ address: ADDR.otherEscrow, abi: BattleEscrowAbi, eventName: 'RefundedStale', args: {} });
+      getTransactionReceipt.mockResolvedValue(buildReceipt([log]));
+
+      const { verifyDuelRefundedStale } = await import('@/lib/chainVerify');
+      await expect(verifyDuelRefundedStale(TX_HASH, ADDR.escrow)).rejects.toThrow(/RefundedStale event not found/);
     });
   });
 });

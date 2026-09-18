@@ -9,6 +9,7 @@ import { getLivePoolSamples } from '@/lib/dexScreenerSource';
 import { verifyDuelJoined } from '@/lib/chainVerify';
 import { toLobbySnapshot, applyLobby } from '@/lib/lobbyAdapter';
 import { getClientIp, getClientCountry } from '@/lib/requestSignals';
+import { getFundingSource } from '@/lib/fundingSource';
 import { BLOCKED_COUNTRY_CODES } from '@/lib/riskConfig';
 import { success, failure } from '@/utils/response';
 
@@ -90,11 +91,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
         await duel.save();
 
-        // Real signal for @mcapduel/risk's wallet-clustering check at
+        // Real signals for @mcapduel/risk's wallet-clustering check at
         // settlement (lib/duelEngine.ts) -- see lib/models/WalletSighting.ts.
         const ip = getClientIp(req);
-        if (ip !== 'unknown') {
-            await WalletSighting.create({ wallet: opponent, ip });
+        const fundedBy = await getFundingSource(opponent);
+        if (ip !== 'unknown' || fundedBy) {
+            await WalletSighting.create({
+                wallet: opponent,
+                ...(ip !== 'unknown' ? { ip } : {}),
+                ...(fundedBy ? { fundedBy } : {}),
+            });
         }
 
         return success(duel);

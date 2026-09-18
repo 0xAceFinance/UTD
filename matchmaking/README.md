@@ -8,9 +8,14 @@ the real backend. See `../Contracts/src/duel/` for the on-chain half
 
 - `src/stateMachine.ts` — every transition from Section 02's lobby table
   (`createLobby`, `submitJoin`, `failJoin`, `confirmLive`, `closeBattleWindow`,
-  `flagForReview`, `settle`, `cancel`, `expire`), each validating its own
-  preconditions and throwing `InvalidTransitionError` otherwise (18 tests,
-  `npm test`).
+  `flagForReview`, `settle`, `voidHeld`, `refundStale`, `cancel`, `expire`),
+  each validating its own preconditions and throwing `InvalidTransitionError`
+  otherwise (29 tests, `npm test`).
+  - `voidHeld`: the other half of the `HELD` recovery path — an admin decided
+    a flagged match should refund instead of settle (see `../risk/README.md`).
+  - `refundStale`: the last-resort, signature-free recovery path for a duel
+    stuck in `LIVE`/`SETTLING`/`HELD` well past its end time (mirrors
+    `BattleEscrow.refundStale()` on-chain).
 - `src/cancellationLimiter.ts` — the 5-per-hour / 15-minute-cooldown rule
   (`canCreateLobby`), as a pure function over a list of past cancellation
   timestamps.

@@ -14,21 +14,17 @@ try {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: false,
-  async redirects() {
-    return [
-      {
-        source: '/',
-        destination: '/landing',
-        permanent: false,
-      },
-    ]
-  },
   transpilePackages: ['@mcapduel/engine', '@mcapduel/matchmaking', '@mcapduel/points', '@mcapduel/risk'],
   eslint: {
+    // No ESLint config exists in this project yet (no .eslintrc/eslint.config.*,
+    // eslint isn't even a dependency) -- setting one up is a separate decision
+    // (rule strictness, likely a pile of first-time findings across the whole
+    // app), not a one-line flip. This flag stays true until that's done
+    // deliberately; it isn't currently masking any real lint failures.
     ignoreDuringBuilds: true,
   },
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   images: {
     unoptimized: true,

@@ -65,11 +65,44 @@ export function flagForReview(lobby: Lobby): Lobby {
   return { ...lobby, status: "HELD" };
 }
 
+/**
+ * The HELD recovery path: an admin reviewed a flagged match and decided it
+ * should not settle after all -- both stakes get refunded instead (on-chain,
+ * BattleEscrow.voidActive() mirrors this; see Contracts/src/duel/BattleEscrow.sol).
+ * Reuses CANCELLED as the terminal status since neither transition ever pays
+ * out a winner. The other resolution -- confirming the match was legitimate
+ * -- reuses the existing `settle` transition, which already accepts HELD.
+ */
+export function voidHeld(lobby: Lobby): Lobby {
+  if (lobby.status !== "HELD") throw new InvalidTransitionError(lobby.status, "voidHeld");
+  return { ...lobby, status: "CANCELLED" };
+}
+
 export function settle(lobby: Lobby, winnerSide: 0 | 1): Lobby {
   if (lobby.status !== "SETTLING" && lobby.status !== "HELD") {
     throw new InvalidTransitionError(lobby.status, "settle");
   }
   return { ...lobby, status: "SETTLED", winnerSide };
+}
+
+/**
+ * The last-resort recovery path: the match never settled through any normal
+ * route (oracle key lost, a HELD match nobody resolved, a blacklisted
+ * winner address making settle()'s transfer always revert) and has now sat
+ * unsettled well past its end time. On-chain, BattleEscrow.refundStale()
+ * mirrors this permissionlessly, no signature required (see
+ * Contracts/src/duel/BattleEscrow.sol) -- the real timing gate lives there;
+ * this transition just accepts the DB-side consequence once the backend has
+ * verified the real on-chain event. Reachable from LIVE (the backend itself
+ * never advanced it), SETTLING (signed but never confirmed on-chain), or
+ * HELD (flagged, never resolved) -- reuses CANCELLED since neither transition
+ * ever pays out a winner.
+ */
+export function refundStale(lobby: Lobby): Lobby {
+  if (lobby.status !== "LIVE" && lobby.status !== "SETTLING" && lobby.status !== "HELD") {
+    throw new InvalidTransitionError(lobby.status, "refundStale");
+  }
+  return { ...lobby, status: "CANCELLED" };
 }
 
 export function cancel(lobby: Lobby, canceller: string): Lobby {

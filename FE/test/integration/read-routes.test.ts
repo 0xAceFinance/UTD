@@ -247,21 +247,27 @@ describe('GET /api/users (KNOWN BUG: field-name mismatch)', () => {
   });
 });
 
-describe('GET /api/users/[id] (KNOWN BUG: unawaited Next.js 15 params)', () => {
-  it('BUG: always 400s "Invalid user ID" regardless of the real id, because params is a Promise here (Next 15 App Router) but the route destructures it synchronously', async () => {
-    // Every other dynamic route in this app (duels/[id], combat-record/[wallet])
-    // declares `{ params }: { params: Promise<{ id: string }> }` and awaits
-    // it. app/api/users/[id]/route.ts still uses the pre-Next-15 synchronous
-    // shape (`{ params }: { params: { id: string } }`), so `params.id` reads
-    // a property off a Promise object and is always undefined --
-    // Types.ObjectId.isValid(undefined) is false, so this 400s unconditionally,
-    // for literally any id, real or fake. Documents current behavior.
+describe('GET /api/users/[id]', () => {
+  it('returns the user by id, excluding passwordHash', async () => {
+    // Was previously stuck on the pre-Next-15 synchronous params shape
+    // (`{ params }: { params: { id: string } }`), which always 400'd since
+    // `params.id` read a property off a Promise object. Fixed to match every
+    // other dynamic route in this app (duels/[id], combat-record/[wallet]):
+    // `{ params }: { params: Promise<{ id: string }> }`, awaited.
     const user = await User.create({ username: 'a', email: 'a@x.com', passwordHash: 'h', walletAddress: '0xabc' });
     const res = await userByIdRoute(getReq(`http://localhost/api/users/${user._id}`), {
-      // Cast past the route's own (outdated) synchronous type to prove it's
-      // wrong even when called exactly the way Next 15 actually calls it.
-      params: Promise.resolve({ id: String(user._id) }) as unknown as { id: string },
+      params: Promise.resolve({ id: String(user._id) }),
     });
-    expect(res.status).toBe(400); // should be 200 with the user, once fixed to `await params`
+    const json = await body(res);
+    expect(res.status).toBe(200);
+    expect(json.data.username).toBe('a');
+    expect(json.data.passwordHash).toBeUndefined();
+  });
+
+  it('400s on an invalid id', async () => {
+    const res = await userByIdRoute(getReq('http://localhost/api/users/not-a-valid-id'), {
+      params: Promise.resolve({ id: 'not-a-valid-id' }),
+    });
+    expect(res.status).toBe(400);
   });
 });

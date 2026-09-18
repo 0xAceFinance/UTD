@@ -134,4 +134,52 @@ contract RedemptionVaultTest is Test {
         vault.setVestingDuration(90 days); // boundary, should succeed
         assertEq(vault.vestingDurationSeconds(), 90 days);
     }
+
+    /// @dev Previously _vestedAmount() read the *current* global
+    /// vestingDurationSeconds at claim time, not the value in effect when the
+    /// schedule was created -- so lengthening the global duration after a
+    /// wallet had already partially claimed could make the recomputed vested
+    /// amount dip below what they'd already claimed, underflowing and
+    /// reverting claim() for their entire batch (every schedule, not just the
+    /// affected one) until enough real time passed to catch back up. Fixed by
+    /// snapshotting the duration into each schedule at redeem() time.
+    function test_changingGlobalVestingDurationDoesNotAffectAlreadyCreatedSchedules() public {
+        vm.prank(player);
+        vault.redeem(1_000); // 1 token total, vesting over the default 60 days
+
+        vm.warp(block.timestamp + 30 days); // halfway through the original 60-day schedule
+        uint256 halfwayBefore = vault.claimableAmount(player);
+        assertApproxEqAbs(halfwayBefore, 0.5e18, 1e14);
+
+        vm.prank(player);
+        vault.claim(); // claims the ~halfway amount
+
+        // Admin lengthens the global vesting duration -- must not retroactively
+        // reprice this already-created, already-partially-claimed schedule.
+        vault.setVestingDuration(90 days);
+
+        // Immediately after the change, at the same point in time, claimable
+        // must be unaffected (still ~0 further vested, not an underflow revert).
+        assertEq(vault.claimableAmount(player), 0);
+        vm.prank(player);
+        vm.expectRevert("nothing vested to claim");
+        vault.claim();
+
+        // The schedule still resolves fully at its *original* 60-day mark,
+        // unaffected by the new 90-day global default.
+        vm.warp(block.timestamp + 30 days); // 60 days total elapsed
+        assertEq(vault.claimableAmount(player), 0.5e18); // the remaining half
+    }
+
+    function test_newSchedulesUseWhicheverDurationWasCurrentWhenCreated() public {
+        vault.setVestingDuration(90 days);
+        vm.prank(player);
+        vault.redeem(1_000);
+
+        vm.warp(block.timestamp + 60 days); // would be fully vested under the OLD 60-day default
+        assertApproxEqAbs(vault.claimableAmount(player), 0.667e18, 1e15); // ~2/3 through a 90-day schedule
+
+        vm.warp(block.timestamp + 30 days); // 90 days total elapsed
+        assertEq(vault.claimableAmount(player), 1e18); // fully vested at the schedule's own duration
+    }
 }

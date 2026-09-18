@@ -6,6 +6,7 @@ import Duel from '@/lib/models/Duel';
 import DuelToken from '@/lib/models/DuelToken';
 import WalletSighting from '@/lib/models/WalletSighting';
 import { getClientIp } from '@/lib/requestSignals';
+import { getFundingSource } from '@/lib/fundingSource';
 import { checkCanCreateLobby } from '@/lib/duelGuards';
 import { verifyDuelCreated } from '@/lib/chainVerify';
 import { success, failure } from '@/utils/response';
@@ -117,11 +118,16 @@ export async function POST(req: NextRequest) {
             openDeadline: new Date(lobby.openDeadlineSec * 1000),
         });
 
-        // Real signal for @mcapduel/risk's wallet-clustering check at
+        // Real signals for @mcapduel/risk's wallet-clustering check at
         // settlement (lib/duelEngine.ts) -- see lib/models/WalletSighting.ts.
         const ip = getClientIp(req);
-        if (ip !== 'unknown') {
-            await WalletSighting.create({ wallet: creatorWallet.toLowerCase(), ip });
+        const fundedBy = await getFundingSource(creatorWallet);
+        if (ip !== 'unknown' || fundedBy) {
+            await WalletSighting.create({
+                wallet: creatorWallet.toLowerCase(),
+                ...(ip !== 'unknown' ? { ip } : {}),
+                ...(fundedBy ? { fundedBy } : {}),
+            });
         }
 
         return success(duel, 201);

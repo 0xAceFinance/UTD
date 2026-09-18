@@ -8,12 +8,12 @@ import { Types } from 'mongoose';
 
 export async function GET(
     req: Request,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
         await connectToDatabase();
 
-        const { id } = params;
+        const { id } = await params;
 
         if (!Types.ObjectId.isValid(id)) {
             return failure('Invalid user ID', 400);

@@ -24,6 +24,14 @@ contract RedemptionVault is Ownable, ReentrancyGuard {
         uint256 totalAmount;
         uint256 claimedAmount;
         uint256 startTime;
+        /// @dev Snapshotted from vestingDurationSeconds at redeem() time, not
+        /// read live -- otherwise a later owner change to the global duration
+        /// would retroactively reprice every existing schedule, and could
+        /// make _vestedAmount() dip below claimedAmount for one already
+        /// partially-claimed, reverting claim() for that wallet's entire
+        /// batch (every other schedule too) until enough time passes to
+        /// catch back up.
+        uint256 vestingDurationSeconds;
     }
 
     IERC20 public immutable rewardToken;
@@ -69,11 +77,20 @@ contract RedemptionVault is Ownable, ReentrancyGuard {
         uint256 cap = tierCapPoints[keccak256(bytes(tier))];
         require(redeemedInEpoch[msg.sender][epoch] + pointsAmount <= cap, "exceeds this tier's per-epoch redemption cap");
 
+        uint256 tokenAmount = pointsAmount * tokensPerPointWad;
+        require(tokenAmount > 0, "rate too low: this would redeem for zero reward tokens");
+
         redeemedInEpoch[msg.sender][epoch] += pointsAmount;
         combatRecord.markRedeemed(msg.sender, pointsAmount);
 
-        uint256 tokenAmount = pointsAmount * tokensPerPointWad;
-        schedules[msg.sender].push(VestingSchedule({ totalAmount: tokenAmount, claimedAmount: 0, startTime: block.timestamp }));
+        schedules[msg.sender].push(
+            VestingSchedule({
+                totalAmount: tokenAmount,
+                claimedAmount: 0,
+                startTime: block.timestamp,
+                vestingDurationSeconds: vestingDurationSeconds
+            })
+        );
 
         emit Redeemed(msg.sender, pointsAmount, tokenAmount, schedules[msg.sender].length - 1);
     }
@@ -108,9 +125,9 @@ contract RedemptionVault is Ownable, ReentrancyGuard {
     }
 
     function _vestedAmount(VestingSchedule storage s) internal view returns (uint256) {
-        if (block.timestamp >= s.startTime + vestingDurationSeconds) return s.totalAmount;
+        if (block.timestamp >= s.startTime + s.vestingDurationSeconds) return s.totalAmount;
         uint256 elapsed = block.timestamp - s.startTime;
-        return (s.totalAmount * elapsed) / vestingDurationSeconds;
+        return (s.totalAmount * elapsed) / s.vestingDurationSeconds;
     }
 
     function setRate(uint256 _tokensPerPointWad) external onlyOwner {

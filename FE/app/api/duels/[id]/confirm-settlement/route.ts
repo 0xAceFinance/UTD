@@ -14,7 +14,9 @@ import { success, failure } from '@/utils/response';
  * client's claim of what happened: re-derives the real winnerSide from the
  * real Settled event in the real transaction receipt before touching
  * anything. Safe to call more than once -- a duel that's already SETTLED
- * just returns as-is.
+ * just returns as-is, and the SETTLING -> SETTLED claim below is an atomic
+ * compare-and-swap so two concurrent calls (a retried request, two tabs)
+ * can't both reach finalizeSettlement and double-credit points.
  */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -34,6 +36,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         }
 
         const { winnerSide } = await verifyDuelSettled(txHash, duel.escrowAddress);
+
+        const claimed = await Duel.findOneAndUpdate(
+            { _id: duel._id, status: 'SETTLING' },
+            { $set: { status: 'SETTLED', winnerSide } }
+        );
+        if (!claimed) return success(await Duel.findById(id));
 
         applyLobby(duel, settle(toLobbySnapshot(duel), winnerSide));
         await finalizeSettlement(duel, winnerSide);

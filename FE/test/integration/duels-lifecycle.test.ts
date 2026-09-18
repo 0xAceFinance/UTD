@@ -6,11 +6,19 @@ const chainVerifyMocks = vi.hoisted(() => ({
   verifyDuelJoined: vi.fn(),
   verifyDuelClosed: vi.fn(),
   verifyDuelSettled: vi.fn(),
+  verifyDuelRefundedStale: vi.fn(),
 }));
 vi.mock('@/lib/chainVerify', () => chainVerifyMocks);
 
 const { getLivePoolSamples } = vi.hoisted(() => ({ getLivePoolSamples: vi.fn() }));
 vi.mock('@/lib/dexScreenerSource', () => ({ getLivePoolSamples }));
+
+// getFundingSource hits a real RPC (eth_getLogs) -- mock the network boundary
+// so these tests don't pay real (or, worse, unreachable-and-retried) network
+// latency. Defaults to "no funding source found", the same as the real
+// function's behavior when nothing turns up.
+const { getFundingSource } = vi.hoisted(() => ({ getFundingSource: vi.fn().mockResolvedValue(undefined) }));
+vi.mock('@/lib/fundingSource', () => ({ getFundingSource }));
 
 import { POST as createDuelRoute } from '@/app/api/duels/route';
 import { GET as getDuelRoute } from '@/app/api/duels/[id]/route';
@@ -18,6 +26,7 @@ import { POST as joinDuelRoute } from '@/app/api/duels/[id]/join/route';
 import { POST as cancelDuelRoute } from '@/app/api/duels/[id]/cancel/route';
 import { POST as expireDuelRoute } from '@/app/api/duels/[id]/expire/route';
 import { POST as confirmSettlementRoute } from '@/app/api/duels/[id]/confirm-settlement/route';
+import { POST as refundStaleRoute } from '@/app/api/duels/[id]/refund-stale/route';
 import Duel from '@/lib/models/Duel';
 import OracleHealthSample from '@/lib/models/OracleHealthSample';
 import CombatRecord from '@/lib/models/CombatRecord';
@@ -89,6 +98,11 @@ beforeEach(async () => {
   await ensureDbConnected();
   await clearDatabase();
   vi.clearAllMocks();
+  // vi.clearAllMocks() only clears call history, not a previously-set
+  // mockResolvedValue -- re-establish the safe default explicitly so a test
+  // that overrides this (e.g. the funded_by sybil test below) can't leak its
+  // override into every test that runs after it.
+  getFundingSource.mockResolvedValue(undefined);
   await OracleHealthSample.create({ timestampSec: Math.floor(Date.now() / 1000), succeeded: true });
 });
 
@@ -396,5 +410,151 @@ describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {
 
     expect(settled.status).toBe('SETTLING');
     expect(settled.flaggedSybil).toBeFalsy();
+  });
+
+  it('two wallets on different IPs but funded from the same source are flagged HELD (the funded_by signal shared-IP alone would miss)', async () => {
+    const { tokenA, tokenB } = await setupTop10();
+    mockCreatedEvent();
+    getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
+
+    const SHARED_FUNDER = '0xsharedfunderaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    getFundingSource.mockResolvedValue(SHARED_FUNDER);
+
+    const createRes = await createDuelRoute(
+      postJson(
+        'http://localhost/api/duels',
+        { creatorWallet: CREATOR, tokenASymbol: tokenA.symbol, tokenBSymbol: tokenB.symbol, txHash: '0x' + 'aa'.repeat(32) },
+        { 'x-forwarded-for': '1.1.1.1' } // distinct IP from the join below
+      )
+    );
+    const duel = (await body(createRes)).data;
+
+    chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
+    await joinDuelRoute(
+      postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }, { 'x-forwarded-for': '2.2.2.2' }),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
+
+    await Duel.findByIdAndUpdate(duel._id, { endTime: new Date(Date.now() - 1000) });
+    const settleTickRes = await getDuelRoute(getReq(`http://localhost/api/duels/${duel._id}`), {
+      params: Promise.resolve({ id: duel._id }),
+    });
+    const held = (await body(settleTickRes)).data;
+
+    expect(held.status).toBe('HELD');
+    expect(held.flaggedSybil).toBe(true);
+  });
+});
+
+describe('POST /api/duels/[id]/refund-stale (last-resort recovery)', () => {
+  it('refunds an on-chain duel stuck in SETTLING once the real RefundedStale event verifies', async () => {
+    const duel = await createOnChainDuel();
+    chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
+    getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
+    await joinDuelRoute(
+      postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }, { 'x-forwarded-for': OPPONENT_IP }),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
+    await Duel.findByIdAndUpdate(duel._id, { endTime: new Date(Date.now() - 1000) });
+    await getDuelRoute(getReq(`http://localhost/api/duels/${duel._id}`), { params: Promise.resolve({ id: duel._id }) });
+
+    const stuck = await Duel.findById(duel._id);
+    expect(stuck?.status).toBe('SETTLING'); // signed, but never confirmed on-chain -- the stuck scenario
+
+    chainVerifyMocks.verifyDuelRefundedStale.mockResolvedValue(undefined);
+    const res = await refundStaleRoute(
+      postJson(`http://localhost/api/duels/${duel._id}/refund-stale`, { txHash: '0x' + 'ee'.repeat(32) }),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
+    const json = (await body(res)).data;
+    expect(res.status).toBe(200);
+    expect(json.status).toBe('CANCELLED');
+  });
+
+  it('requires a txHash for an on-chain duel', async () => {
+    const duel = await createOnChainDuel();
+    chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
+    getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
+    await joinDuelRoute(
+      postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }, { 'x-forwarded-for': OPPONENT_IP }),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
+
+    const res = await refundStaleRoute(postJson(`http://localhost/api/duels/${duel._id}/refund-stale`, {}), {
+      params: Promise.resolve({ id: duel._id }),
+    });
+    expect(res.status).toBe(400);
+
+    const reloaded = await Duel.findById(duel._id);
+    expect(reloaded?.status).toBe('LIVE'); // unchanged
+  });
+
+  it('rejects a tampered/wrong txHash, leaving the duel unchanged', async () => {
+    const duel = await createOnChainDuel();
+    chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
+    getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
+    await joinDuelRoute(
+      postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }, { 'x-forwarded-for': OPPONENT_IP }),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
+
+    chainVerifyMocks.verifyDuelRefundedStale.mockRejectedValue(new Error('RefundedStale event not found for this duel in that transaction.'));
+    const res = await refundStaleRoute(
+      postJson(`http://localhost/api/duels/${duel._id}/refund-stale`, { txHash: '0x' + 'badbad'.repeat(10) }),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
+    expect(res.status).toBe(400);
+
+    const reloaded = await Duel.findById(duel._id);
+    expect(reloaded?.status).toBe('LIVE'); // unchanged
+  });
+
+  it('a legacy off-chain duel (no escrowAddress) refunds directly, no txHash needed', async () => {
+    const { tokenA, tokenB } = await setupTop10();
+    const legacyDuel = await Duel.create({
+      status: 'LIVE',
+      creatorWallet: CREATOR.toLowerCase(),
+      opponentWallet: OPPONENT.toLowerCase(),
+      creatorSide: 0,
+      tokenA: { symbol: tokenA.symbol, name: tokenA.name, startMarketCapUsd: 1, currentMarketCapUsd: 1, sustainedPeakMarketCapUsd: 1, rawSamples: [] },
+      tokenB: { symbol: tokenB.symbol, name: tokenB.name, startMarketCapUsd: 1, currentMarketCapUsd: 1, sustainedPeakMarketCapUsd: 1, rawSamples: [] },
+      buyInUsd: 100,
+      durationSeconds: 900,
+      openDeadline: new Date(Date.now() + 1000),
+      startTime: new Date(Date.now() - 10_000),
+      endTime: new Date(Date.now() - 5_000),
+    });
+
+    const res = await refundStaleRoute(postJson(`http://localhost/api/duels/${legacyDuel._id}/refund-stale`, {}), {
+      params: Promise.resolve({ id: String(legacyDuel._id) }),
+    });
+    const json = (await body(res)).data;
+    expect(res.status).toBe(200);
+    expect(json.status).toBe('CANCELLED');
+    expect(chainVerifyMocks.verifyDuelRefundedStale).not.toHaveBeenCalled();
+  });
+
+  it('rejects a duel that is not LIVE/SETTLING/HELD (e.g. already SETTLED)', async () => {
+    const { tokenA, tokenB } = await setupTop10();
+    const settledDuel = await Duel.create({
+      status: 'SETTLED',
+      creatorWallet: CREATOR.toLowerCase(),
+      opponentWallet: OPPONENT.toLowerCase(),
+      creatorSide: 0,
+      winnerSide: 0,
+      tokenA: { symbol: tokenA.symbol, name: tokenA.name, startMarketCapUsd: 1, currentMarketCapUsd: 1, sustainedPeakMarketCapUsd: 1, rawSamples: [] },
+      tokenB: { symbol: tokenB.symbol, name: tokenB.name, startMarketCapUsd: 1, currentMarketCapUsd: 1, sustainedPeakMarketCapUsd: 1, rawSamples: [] },
+      buyInUsd: 100,
+      durationSeconds: 900,
+      openDeadline: new Date(Date.now() + 1000),
+    });
+
+    const res = await refundStaleRoute(postJson(`http://localhost/api/duels/${settledDuel._id}/refund-stale`, {}), {
+      params: Promise.resolve({ id: String(settledDuel._id) }),
+    });
+    expect(res.status).toBe(400); // refundStale() throws InvalidTransitionError from SETTLED
+
+    const reloaded = await Duel.findById(settledDuel._id);
+    expect(reloaded?.status).toBe('SETTLED'); // unchanged
   });
 });

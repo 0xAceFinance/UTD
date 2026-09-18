@@ -9,6 +9,8 @@ import {
   settle,
   cancel,
   expire,
+  voidHeld,
+  refundStale,
 } from "../src/stateMachine.js";
 import { InvalidTransitionError } from "../src/types.js";
 import type { Lobby, LobbyStatus } from "../src/types.js";
@@ -70,6 +72,61 @@ describe("lobby state machine — the happy path", () => {
 
     lobby = settle(lobby, 1);
     expect(lobby.status).toBe("SETTLED");
+  });
+
+  it("also allows voiding a HELD match instead -- the other half of the HELD recovery path", () => {
+    let lobby = baseLobby();
+    lobby = submitJoin(lobby, "0xOpponent", NOW);
+    lobby = confirmLive(lobby, NOW);
+    lobby = closeBattleWindow(lobby, lobby.endTimeSec!);
+    lobby = flagForReview(lobby);
+    expect(lobby.status).toBe("HELD");
+
+    lobby = voidHeld(lobby);
+    expect(lobby.status).toBe("CANCELLED");
+  });
+});
+
+describe("lobby state machine — refundStale (last-resort recovery)", () => {
+  it("recovers a duel stuck in LIVE (the backend itself never advanced it)", () => {
+    let lobby = baseLobby();
+    lobby = submitJoin(lobby, "0xOpponent", NOW);
+    lobby = confirmLive(lobby, NOW);
+    expect(lobby.status).toBe("LIVE");
+
+    lobby = refundStale(lobby);
+    expect(lobby.status).toBe("CANCELLED");
+  });
+
+  it("recovers a duel stuck in SETTLING (signed but never confirmed on-chain)", () => {
+    let lobby = baseLobby();
+    lobby = submitJoin(lobby, "0xOpponent", NOW);
+    lobby = confirmLive(lobby, NOW);
+    lobby = closeBattleWindow(lobby, lobby.endTimeSec!);
+    expect(lobby.status).toBe("SETTLING");
+
+    lobby = refundStale(lobby);
+    expect(lobby.status).toBe("CANCELLED");
+  });
+
+  it("recovers a duel stuck in HELD (flagged, never resolved by an admin)", () => {
+    let lobby = baseLobby();
+    lobby = submitJoin(lobby, "0xOpponent", NOW);
+    lobby = confirmLive(lobby, NOW);
+    lobby = closeBattleWindow(lobby, lobby.endTimeSec!);
+    lobby = flagForReview(lobby);
+    expect(lobby.status).toBe("HELD");
+
+    lobby = refundStale(lobby);
+    expect(lobby.status).toBe("CANCELLED");
+  });
+
+  it("refuses from OPEN, MATCHED, SETTLED, EXPIRED, or CANCELLED", () => {
+    const open = baseLobby();
+    expect(() => refundStale(open)).toThrow(InvalidTransitionError);
+
+    const matched = submitJoin(open, "0xOpponent", NOW);
+    expect(() => refundStale(matched)).toThrow(InvalidTransitionError);
   });
 });
 
@@ -206,6 +263,8 @@ describe("lobby state machine — exhaustive (state, event) allow/deny table", (
     | "closeBattleWindow"
     | "flagForReview"
     | "settle"
+    | "voidHeld"
+    | "refundStale"
     | "cancel"
     | "expire";
 
@@ -218,6 +277,8 @@ describe("lobby state machine — exhaustive (state, event) allow/deny table", (
     closeBattleWindow: ["LIVE"],
     flagForReview: ["SETTLING"],
     settle: ["SETTLING", "HELD"],
+    voidHeld: ["HELD"],
+    refundStale: ["LIVE", "SETTLING", "HELD"],
     cancel: ["OPEN"],
     expire: ["OPEN"],
   };
@@ -231,6 +292,8 @@ describe("lobby state machine — exhaustive (state, event) allow/deny table", (
     closeBattleWindow: (l) => closeBattleWindow(l, NOW + 1_000_000),
     flagForReview: (l) => flagForReview(l),
     settle: (l) => settle(l, 1),
+    voidHeld: (l) => voidHeld(l),
+    refundStale: (l) => refundStale(l),
     cancel: (l) => cancel(l, l.creator),
     expire: (l) => expire(l, NOW + 1_000_000),
   };
@@ -320,6 +383,8 @@ describe("lobby state machine — purity and randomized transition fuzzing", () 
       | "closeBattleWindow"
       | "flagForReview"
       | "settle"
+      | "voidHeld"
+      | "refundStale"
       | "cancel"
       | "expire";
 
@@ -330,6 +395,8 @@ describe("lobby state machine — purity and randomized transition fuzzing", () 
       closeBattleWindow: ["LIVE"],
       flagForReview: ["SETTLING"],
       settle: ["SETTLING", "HELD"],
+      voidHeld: ["HELD"],
+      refundStale: ["LIVE", "SETTLING", "HELD"],
       cancel: ["OPEN"],
       expire: ["OPEN"],
     };
@@ -348,6 +415,10 @@ describe("lobby state machine — purity and randomized transition fuzzing", () 
           return flagForReview(lobby);
         case "settle":
           return settle(lobby, 1);
+        case "voidHeld":
+          return voidHeld(lobby);
+        case "refundStale":
+          return refundStale(lobby);
         case "cancel":
           return cancel(lobby, lobby.creator);
         case "expire":

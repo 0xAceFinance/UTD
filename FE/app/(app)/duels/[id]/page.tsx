@@ -17,7 +17,7 @@ import { ShieldCheck, Trophy, Twitter, AlertTriangle, ArrowLeft } from "lucide-r
 import Link from "next/link"
 import { toast } from "sonner"
 import { useWallet } from "@/hooks/useWallet"
-import { cancelDuelOnChain, expireDuelOnChain, settleDuelOnChain } from "@/lib/duelContract"
+import { cancelDuelOnChain, expireDuelOnChain, settleDuelOnChain, refundStaleDuelOnChain } from "@/lib/duelContract"
 import { SideTag } from "../../components/duel/SideTag"
 import { DuelDTO, formatUsd, pctReturn } from "../../components/duel/types"
 
@@ -33,6 +33,11 @@ function buildShareIntent(duel: DuelDTO, myResult: "won" | "lost" | null): strin
     const url = typeof window !== "undefined" ? `${window.location.origin}/duels/${duel._id}` : ""
     return `https://twitter.com/intent/tweet?${new URLSearchParams({ text, url }).toString()}`
 }
+
+/** Mirrors BattleEscrow.STALE_REFUND_GRACE_PERIOD (Contracts/src/duel/BattleEscrow.sol) --
+ * a UI-only estimate for when to surface the force-refund action. The real gate is
+ * on-chain; clicking a little early just reverts with "not stale yet". */
+const STALE_REFUND_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000
 
 function useCountdown(target?: string) {
     const [remaining, setRemaining] = useState(0)
@@ -56,6 +61,7 @@ export default function DuelDetailPage() {
     const [cancelling, setCancelling] = useState(false)
     const [reclaiming, setReclaiming] = useState(false)
     const [claiming, setClaiming] = useState(false)
+    const [forceRefunding, setForceRefunding] = useState(false)
 
     const load = useCallback(async () => {
         const res = await fetch(`/api/duels/${params.id}`)
@@ -145,6 +151,32 @@ export default function DuelDetailPage() {
             toast.error((err as Error).message || "Something went wrong settling the duel.")
         } finally {
             setClaiming(false)
+        }
+    }
+
+    async function handleForceRefund() {
+        if (!duel) return
+        setForceRefunding(true)
+        try {
+            let txHash: string | undefined
+            if (duel.escrowAddress) {
+                txHash = await refundStaleDuelOnChain(duel.escrowAddress as `0x${string}`)
+            }
+            const res = await fetch(`/api/duels/${duel._id}/refund-stale`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ txHash }),
+            })
+            const json = await res.json()
+            if (!json.success) toast.error(json.error)
+            else {
+                toast.success("Duel refunded. Both stakes were returned.")
+                setDuel(json.data)
+            }
+        } catch (err) {
+            toast.error((err as Error).message || "Something went wrong refunding the duel.")
+        } finally {
+            setForceRefunding(false)
         }
     }
 
@@ -263,7 +295,9 @@ export default function DuelDetailPage() {
                         {duel.status === "EXPIRED" ? "DUEL EXPIRED" : "DUEL CANCELLED"}
                     </p>
                     <p className="utd-body text-xs text-[var(--dim)] mt-2">
-                        Stakes have been refunded to the creator.
+                        {duel.opponentWallet
+                            ? "Both players' stakes have been refunded."
+                            : "The creator's stake has been refunded."}
                     </p>
                     <div className="mt-6">
                         <Link href="/duels">
@@ -286,6 +320,11 @@ export default function DuelDetailPage() {
     const held = duel.status === "HELD"
     const mySide: 0 | 1 | undefined = isCreator ? duel.creatorSide : isOpponent ? (duel.creatorSide === 0 ? 1 : 0) : undefined
     const myResult = (settled || settling) && mySide !== undefined ? (duel.winnerSide === mySide ? "won" : "lost") : null
+    // The last-resort recovery path -- only ever true for a genuinely stuck
+    // duel (oracle key issue, unresolved HELD flag, blacklisted winner
+    // address). Never fires during normal settlement, which happens within
+    // seconds of endTime.
+    const isStale = !settled && !!duel.endTime && Date.now() - new Date(duel.endTime).getTime() >= STALE_REFUND_GRACE_PERIOD_MS
 
     return (
         <div className="space-y-6">
@@ -347,6 +386,26 @@ export default function DuelDetailPage() {
                         className="utd-btn py-2.5 px-6 text-[10px]"
                     >
                         {claiming ? "CONFIRMING ON-CHAIN…" : "TRIGGER ESCROW PAYOUT →"}
+                    </button>
+                </div>
+            )}
+
+            {/* Stuck Duel: Last-Resort Refund */}
+            {isStale && (
+                <div className="p-6 bg-[var(--s1)] border border-[var(--hot)] text-center">
+                    <div className="flex items-center justify-center gap-2 text-[var(--hot)] mb-2">
+                        <AlertTriangle className="h-4 w-4" />
+                        <span className="utd-pixel text-xs">DUEL STUCK — REFUND AVAILABLE</span>
+                    </div>
+                    <p className="utd-body text-xs text-[var(--dim)] max-w-md mx-auto mb-4">
+                        This duel never settled, well past its normal window. Either player can reclaim both stakes now.
+                    </p>
+                    <button
+                        disabled={forceRefunding}
+                        onClick={handleForceRefund}
+                        className="utd-btn-outline py-2.5 px-6 text-[10px] hover:border-[var(--hot)] hover:text-[var(--hot)]"
+                    >
+                        {forceRefunding ? "REFUNDING…" : "FORCE REFUND BOTH STAKES"}
                     </button>
                 </div>
             )}

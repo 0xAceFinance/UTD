@@ -15,6 +15,8 @@ vi.mock('@/lib/dexScreenerSource', () => ({ getLivePoolSamples }));
 import { simulateTick, maybeSettle, finalizeSettlement } from '@/lib/duelEngine';
 import WalletSighting from '@/lib/models/WalletSighting';
 import CombatRecord from '@/lib/models/CombatRecord';
+import Duel, { type IDuel } from '@/lib/models/Duel';
+import { CONTRACTS } from '@/config/contracts';
 import { ensureDbConnected, clearDatabase } from '../helpers/db';
 import { createDuel, makeSampleSeries, makeTokenSide } from '../helpers/duelFixtures';
 
@@ -214,7 +216,9 @@ describe('lib/duelEngine::maybeSettle winner determination', () => {
     expect(duel.oracleSignature).toBeTruthy();
 
     const expectedSigner = privateKeyToAccount(process.env.ORACLE_SIGNER_PRIVATE_KEY as `0x${string}`).address;
-    const message = keccak256(encodePacked(['address', 'uint8'], [duel.escrowAddress as `0x${string}`, 1]));
+    const message = keccak256(
+      encodePacked(['address', 'uint8', 'uint256'], [duel.escrowAddress as `0x${string}`, 1, BigInt(CONTRACTS.chainId)])
+    );
     const digest = hashMessage({ raw: message });
     const recovered = await recoverAddress({ hash: digest, signature: duel.oracleSignature as `0x${string}` });
     expect(recovered.toLowerCase()).toBe(expectedSigner.toLowerCase());
@@ -282,6 +286,44 @@ describe('lib/duelEngine::maybeSettle winner determination', () => {
     expect(winnerRecord?.totalPoints).toBe(duel.winnerPoints);
     expect(loserRecord?.losses).toBe(1);
     expect(loserRecord?.totalPoints).toBe(duel.loserPoints);
+  });
+
+  it('MONEY SAFETY: concurrent maybeSettle calls for the same duel award points exactly once', async () => {
+    // Simulates two concurrent GET /api/duels/[id] polls (two tabs, a retried
+    // request, or two serverless instances) each independently fetching their
+    // own copy of the same LIVE duel and racing to settle it.
+    const creatorWallet = '0xracecreator00000000000000000000000001';
+    const opponentWallet = '0xraceopponent0000000000000000000000001';
+    const buyInUsd = 200;
+    const saved = await createDuel({
+      status: 'LIVE',
+      creatorWallet,
+      opponentWallet,
+      creatorSide: 0,
+      buyInUsd,
+      startTime: new Date(Date.now() - 10_000_000),
+      endTime: new Date(Date.now() - 1_000),
+      tokenA: flatSide('0xraceAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA1'),
+      tokenB: pumpingSide('0xraceBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB1'),
+    });
+
+    const [copyA, copyB] = await Promise.all([
+      Duel.findById(saved._id) as Promise<IDuel>,
+      Duel.findById(saved._id) as Promise<IDuel>,
+    ]);
+
+    await Promise.all([maybeSettle(copyA), maybeSettle(copyB)]);
+
+    const winnerRecord = await CombatRecord.findOne({ wallet: opponentWallet.toLowerCase() });
+    const loserRecord = await CombatRecord.findOne({ wallet: creatorWallet.toLowerCase() });
+    // Exactly one of the two racing calls should have won the atomic claim
+    // and awarded points -- never both, never neither.
+    expect(winnerRecord?.wins).toBe(1);
+    expect(winnerRecord?.totalPoints).toBeGreaterThan(0);
+    expect(loserRecord?.losses).toBe(1);
+
+    const settled = await Duel.findById(saved._id);
+    expect(settled!.status).toBe('SETTLED');
   });
 });
 
