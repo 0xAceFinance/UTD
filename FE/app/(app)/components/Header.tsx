@@ -3,6 +3,9 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ConnectKitButton } from "connectkit"
+import { Gift } from "lucide-react"
+import { useWallet } from "@/hooks/useWallet"
+import { useAirdrop } from "./airdrop/useAirdrop"
 import { routeTitle } from "./nav"
 
 function WalletButton() {
@@ -35,6 +38,27 @@ function WalletButton() {
  * Top bar. On phones it carries the brand (the sidebar is hidden there); on
  * desktop the sidebar has the brand, so this shows the current screen's title.
  */
+/**
+ * Phones only: the bottom tab bar is full, so the airdrop lives up here as a
+ * glowing chip with a dot while there are tasks left to do.
+ */
+function AirdropButton({ active }: { active: boolean }) {
+    const { address } = useWallet()
+    const { available } = useAirdrop(address)
+    return (
+        <Link
+            href="/airdrop"
+            aria-label={available > 0 ? `Airdrop, ${available} tasks ready` : "Airdrop"}
+            aria-current={active ? "page" : undefined}
+            className={`app-airdrop-btn flex lg:hidden ${active ? "is-active" : ""}`}
+        >
+            <Gift className="h-4 w-4" />
+            <span className="utd-pixel hidden text-[8px] sm:inline">AIRDROP</span>
+            {available > 0 && !active && <span className="app-airdrop-dot" />}
+        </Link>
+    )
+}
+
 export default function Header() {
     const pathname = usePathname()
 
@@ -50,7 +74,10 @@ export default function Header() {
                     </h1>
                 </div>
 
-                <WalletButton />
+                <div className="flex flex-none items-center gap-2">
+                    <AirdropButton active={pathname.startsWith("/airdrop")} />
+                    <WalletButton />
+                </div>
             </div>
         </header>
     )
