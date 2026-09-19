@@ -6,6 +6,7 @@ import { ConnectKitButton } from "connectkit"
 import { sound } from "./SoundEngine"
 import { SectionHeading } from "./SectionHeading"
 import { Check, Copy } from "lucide-react"
+import { apiUrl } from "@/lib/api"
 
 interface ReferralDashboard {
     passNumber: number
@@ -53,7 +54,7 @@ export function WhitelistTerminal() {
 
         const load = async (attempt = 0): Promise<void> => {
             try {
-                const res = await fetch("/api/whitelist")
+                const res = await fetch(apiUrl("/api/whitelist"))
                 const body = await res.json()
                 if (cancelled) return
                 if (body?.success) {
@@ -87,7 +88,7 @@ export function WhitelistTerminal() {
         setWalletError(null)
         ;(async () => {
             try {
-                const res = await fetch(`/api/whitelist/me?wallet=${address}`)
+                const res = await fetch(apiUrl(`/api/whitelist/me?wallet=${address}`))
                 const body = await res.json()
                 if (cancelled) return
                 setDashboard(body?.success ? body.data : null)
@@ -108,7 +109,7 @@ export function WhitelistTerminal() {
         setWalletError(null)
         sound.playBlip(700)
         try {
-            const nonceRes = await fetch(`/api/whitelist/nonce?wallet=${address}`)
+            const nonceRes = await fetch(apiUrl(`/api/whitelist/nonce?wallet=${address}`))
             const nonceBody = await nonceRes.json()
             if (!nonceRes.ok || !nonceBody?.success) {
                 throw new Error(typeof nonceBody?.error === "string" ? nonceBody.error : "Could not start verification.")
@@ -116,7 +117,7 @@ export function WhitelistTerminal() {
 
             const signature = await signMessageAsync({ message: nonceBody.data.message })
 
-            const res = await fetch("/api/whitelist", {
+            const res = await fetch(apiUrl("/api/whitelist"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ identifier: address, signature, nonce: nonceBody.data.nonce, ref: refCode }),
@@ -153,7 +154,7 @@ export function WhitelistTerminal() {
         setEmailError(null)
 
         try {
-            const res = await fetch("/api/whitelist", {
+            const res = await fetch(apiUrl("/api/whitelist"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ identifier: emailInput.trim(), ref: refCode }),

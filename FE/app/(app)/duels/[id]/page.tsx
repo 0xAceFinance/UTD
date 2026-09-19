@@ -28,6 +28,7 @@ import {
 import { SideTag } from "../../components/duel/SideTag"
 
 import { DuelDTO, canForceRefund, formatUsd, pctReturn } from "../../components/duel/types"
+import { apiUrl } from "@/lib/api"
 
 import { GmgnLink } from "../../components/duel/GmgnLink"
 
@@ -70,7 +71,7 @@ export default function DuelDetailPage() {
     const [forceRefunding, setForceRefunding] = useState(false)
 
     const load = useCallback(async () => {
-        const res = await fetch(`/api/duels/${params.id}`)
+        const res = await fetch(apiUrl(`/api/duels/${params.id}`))
         const json = await res.json()
         if (json.success) setDuel(json.data)
     }, [params.id])
@@ -89,7 +90,7 @@ export default function DuelDetailPage() {
             if (duel.escrowAddress) {
                 txHash = await cancelDuelOnChain(duel.escrowAddress as `0x${string}`)
             }
-            const res = await fetch(`/api/duels/${duel._id}/cancel`, {
+            const res = await fetch(apiUrl(`/api/duels/${duel._id}/cancel`), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ wallet: address, txHash }),
@@ -115,7 +116,7 @@ export default function DuelDetailPage() {
             if (duel.escrowAddress) {
                 txHash = await expireDuelOnChain(duel.escrowAddress as `0x${string}`)
             }
-            const res = await fetch(`/api/duels/${duel._id}/expire`, {
+            const res = await fetch(apiUrl(`/api/duels/${duel._id}/expire`), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ txHash }),
@@ -142,7 +143,7 @@ export default function DuelDetailPage() {
                 duel.winnerSide,
                 duel.oracleSignature as `0x${string}`
             )
-            const res = await fetch(`/api/duels/${duel._id}/confirm-settlement`, {
+            const res = await fetch(apiUrl(`/api/duels/${duel._id}/confirm-settlement`), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ txHash }),
@@ -168,7 +169,7 @@ export default function DuelDetailPage() {
             if (duel.escrowAddress) {
                 txHash = await refundStaleDuelOnChain(duel.escrowAddress as `0x${string}`)
             }
-            const res = await fetch(`/api/duels/${duel._id}/refund-stale`, {
+            const res = await fetch(apiUrl(`/api/duels/${duel._id}/refund-stale`), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ txHash }),

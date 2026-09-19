@@ -9,6 +9,7 @@ import { createDuelOnChain } from "@/lib/duelContract"
 import { useFactoryState } from "@/hooks/useFactoryState"
 import { DuelTokenDTO } from "../../components/duel/types"
 import { PausedBanner } from "../../components/duel/PausedBanner"
+import { apiUrl } from "@/lib/api"
 
 const QUICK_BUY_INS = [25, 50, 100, 250]
 
@@ -29,7 +30,7 @@ export default function CreateDuelPage() {
 
     useEffect(() => {
         const load = () =>
-            fetch("/api/duel-tokens")
+            fetch(apiUrl("/api/duel-tokens"))
                 .then((r) => r.json())
                 .then((json) => {
                     if (json.success) setTokens(json.data)
@@ -68,7 +69,7 @@ export default function CreateDuelPage() {
         if (!address || !tokenA || !tokenB) return
         setSubmitting(true)
         try {
-            const precheck = await fetch(`/api/duels/precheck?wallet=${address}`).then((r) => r.json())
+            const precheck = await fetch(apiUrl(`/api/duels/precheck?wallet=${address}`)).then((r) => r.json())
             if (!precheck.success) {
                 toast.error(precheck.error ?? "Could not create a duel right now.")
                 return
@@ -86,7 +87,7 @@ export default function CreateDuelPage() {
             })
 
             setStage("saving")
-            const res = await fetch("/api/duels", {
+            const res = await fetch(apiUrl("/api/duels"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

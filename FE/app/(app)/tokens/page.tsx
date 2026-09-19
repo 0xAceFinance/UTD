@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { DuelTokenDTO, formatUsd } from "../components/duel/types"
 import { GmgnLink } from "../components/duel/GmgnLink"
+import { apiUrl } from "@/lib/api"
 
 /** Shared column template for the desktop table (header + rows). */
 const COLS = "md:grid-cols-[40px_minmax(0,1fr)_96px_96px_96px_80px_200px]"
@@ -14,7 +15,7 @@ export default function TokensPage() {
 
     useEffect(() => {
         const load = () =>
-            fetch("/api/duel-tokens")
+            fetch(apiUrl("/api/duel-tokens"))
                 .then((r) => r.json())
                 .then((json) => {
                     if (json.success) setTokens(json.data)

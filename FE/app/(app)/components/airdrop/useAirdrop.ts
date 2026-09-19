@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import type { AirdropProgress } from "@/lib/airdrop"
+import { apiUrl } from "@/lib/api"
 
 const CHANGED = "utd:airdrop-changed"
 
@@ -22,7 +23,7 @@ export function useAirdrop(address?: string) {
     const refresh = useCallback(async () => {
         try {
             const qs = address ? `?wallet=${address}` : ""
-            const res = await fetch(`/api/airdrop${qs}`)
+            const res = await fetch(apiUrl(`/api/airdrop${qs}`))
             const body = await res.json()
             if (body?.success) setData(body.data)
         } catch {

@@ -18,19 +18,33 @@ const nextConfig = {
   // app its own way and doesn't need this output mode.
   ...(process.env.DOCKER_BUILD === 'true' ? { output: 'standalone' } : {}),
   transpilePackages: ['@mcapduel/engine', '@mcapduel/matchmaking', '@mcapduel/points', '@mcapduel/risk'],
-  async rewrites() {
-    // Set only on Vercel. Proxies every /api/* call to the GCP-hosted
-    // backend so frontend code keeps calling relative "/api/..." paths
-    // unchanged -- Vercel serves pages, GCP Cloud Run serves the API.
-    // Unset in local dev and in the GCP deployment itself, where this app's
-    // own /api routes should serve directly.
-    if (!process.env.BACKEND_API_URL) return []
+  async headers() {
     return [
       {
         source: '/api/:path*',
-        destination: `${process.env.BACKEND_API_URL}/api/:path*`,
+        headers: [
+          { key: 'Access-Control-Allow-Credentials', value: 'true' },
+          { key: 'Access-Control-Allow-Origin', value: '*' },
+          { key: 'Access-Control-Allow-Methods', value: 'GET,OPTIONS,PATCH,DELETE,POST,PUT' },
+          { key: 'Access-Control-Allow-Headers', value: 'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization, x-admin-secret' },
+        ],
       },
     ]
+  },
+  async rewrites() {
+    // When running as the backend container on GCP, serve API routes natively without rewriting
+    if (process.env.DOCKER_BUILD === 'true') return []
+
+    // When running on Vercel or frontend host, proxy /api/* beforeFiles to GCP Cloud Run
+    const backendUrl = process.env.BACKEND_API_URL || 'https://utd-backend-998336196389.us-central1.run.app'
+    return {
+      beforeFiles: [
+        {
+          source: '/api/:path*',
+          destination: `${backendUrl}/api/:path*`,
+        },
+      ],
+    }
   },
   eslint: {
     // No ESLint config exists in this project yet (no .eslintrc/eslint.config.*,

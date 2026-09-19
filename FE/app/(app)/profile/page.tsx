@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useWallet } from "@/hooks/useWallet";
 import { TierBadge } from "../components/duel/SideTag";
 import { DuelDTO, pctReturn } from "../components/duel/types";
+import { apiUrl } from "@/lib/api";
 
 interface CombatRecordDTO {
   wallet: string;
@@ -58,7 +59,7 @@ export default function ProfilePage() {
       setLoading(false);
       return;
     }
-    fetch(`/api/combat-record/${address}`)
+    fetch(apiUrl(`/api/combat-record/${address}`))
       .then((r) => r.json())
       .then((json) => {
         if (json.success) setRecord(json.data);

@@ -23,6 +23,7 @@ import {
 import { useWallet } from "@/hooks/useWallet"
 import { pointsForReferralIndex } from "@/lib/referralPoints"
 import type { AirdropTaskState } from "@/lib/airdrop"
+import { apiUrl } from "@/lib/api"
 import { notifyAirdropChanged, useAirdrop } from "../components/airdrop/useAirdrop"
 
 const TASK_ICON: Record<string, LucideIcon> = {
@@ -72,12 +73,12 @@ export default function AirdropPage() {
         if (!address) return openConnect(true)
         setBusyTask("verify-wallet")
         try {
-            const nonceRes = await fetch(`/api/whitelist/nonce?wallet=${address}`)
+            const nonceRes = await fetch(apiUrl(`/api/whitelist/nonce?wallet=${address}`))
             const nonceBody = await nonceRes.json()
             if (!nonceBody?.success) throw new Error(nonceBody?.error ?? "Could not start verification.")
 
             const signature = await signMessageAsync({ message: nonceBody.data.message })
-            const res = await fetch("/api/whitelist", {
+            const res = await fetch(apiUrl("/api/whitelist"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ identifier: address, signature, nonce: nonceBody.data.nonce, ref: readRef() }),
@@ -100,7 +101,7 @@ export default function AirdropPage() {
         if (!address) return
         setBusyTask(task.id)
         try {
-            const res = await fetch("/api/airdrop/claim", {
+            const res = await fetch(apiUrl("/api/airdrop/claim"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ wallet: address, taskId: task.id }),

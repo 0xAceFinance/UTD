@@ -13,6 +13,7 @@ import { PausedBanner } from "./duel/PausedBanner"
 import { SideTag, StatusTag, TierBadge } from "./duel/SideTag"
 import { gmgnTokenUrl } from "@/lib/tokenLinks"
 import { DuelDTO, DuelStatus, DuelTokenDTO, formatRelativeTime, formatUsd, pctReturn } from "./duel/types"
+import { apiUrl } from "@/lib/api"
 
 const STATUS_TABS: { label: string; value: DuelStatus | "ALL" }[] = [
     { label: "Open", value: "OPEN" },
@@ -49,9 +50,9 @@ export default function Dashboard() {
         async function load() {
             try {
                 const [tokensRes, openRes, liveRes] = await Promise.all([
-                    fetch("/api/duel-tokens"),
-                    fetch("/api/duels?status=OPEN"),
-                    fetch("/api/duels?status=LIVE"),
+                    fetch(apiUrl("/api/duel-tokens")),
+                    fetch(apiUrl("/api/duels?status=OPEN")),
+                    fetch(apiUrl("/api/duels?status=LIVE")),
                 ])
                 const tokensJson = await tokensRes.json()
                 const openJson = await openRes.json()
@@ -84,7 +85,7 @@ export default function Dashboard() {
         if (statusFilter !== "ALL") params.set("status", statusFilter)
         if (mineOnly && address) params.set("wallet", address)
         params.set("sort", sortOrder)
-        fetch(`/api/duels?${params.toString()}`)
+        fetch(apiUrl(`/api/duels?${params.toString()}`))
             .then((r) => r.json())
             .then((json) => {
                 if (json.success) setBrowseLobbies(json.data)
@@ -98,7 +99,7 @@ export default function Dashboard() {
             setCombatRecord(null)
             return
         }
-        fetch(`/api/combat-record/${address}`)
+        fetch(apiUrl(`/api/combat-record/${address}`))
             .then((r) => r.json())
             .then((json) => {
                 if (json.success) setCombatRecord({ tier: json.data.tier, totalPoints: json.data.totalPoints })
@@ -136,7 +137,7 @@ export default function Dashboard() {
                 )
             }
 
-            const res = await fetch(`/api/duels/${duelId}/join`, {
+            const res = await fetch(apiUrl(`/api/duels/${duelId}/join`), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ opponentWallet: address, txHash }),
