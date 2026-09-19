@@ -135,6 +135,11 @@ export default function DuelDetailPage() {
 
     async function handleClaimSettlement() {
         if (!duel || duel.winnerSide === undefined || !duel.oracleSignature) return
+        const winnerWallet = duel.winnerSide === duel.creatorSide ? duel.creatorWallet : duel.opponentWallet
+        if (!address || !winnerWallet || address.toLowerCase() !== winnerWallet.toLowerCase()) {
+            toast.error("Only the winner can settle this duel and claim winnings.")
+            return
+        }
         setClaiming(true)
         try {
             const txHash = await settleDuelOnChain(
@@ -335,6 +340,12 @@ export default function DuelDetailPage() {
     const held = duel.status === "HELD"
     const mySide: 0 | 1 | undefined = isCreator ? duel.creatorSide : isOpponent ? (duel.creatorSide === 0 ? 1 : 0) : undefined
     const myResult = (settled || settling) && mySide !== undefined ? (duel.winnerSide === mySide ? "won" : "lost") : null
+    const winnerWallet = duel.winnerSide !== undefined
+        ? (duel.winnerSide === duel.creatorSide ? duel.creatorWallet : duel.opponentWallet)
+        : undefined
+    const isWinner = address && winnerWallet ? address.toLowerCase() === winnerWallet.toLowerCase() : false
+    const isLoser = address && myWallet && !isWinner
+    const winningToken = duel.winnerSide === 0 ? duel.tokenA : duel.tokenB
     // The last-resort recovery path -- only for a duel with no result yet
     // (LIVE never signed, or HELD never resolved). Never on SETTLING: a winner
     // is signed and refunding would let the loser escape (see canForceRefund).
@@ -382,25 +393,60 @@ export default function DuelDetailPage() {
                 </div>
             )}
 
-            {/* Ready to Claim Alert */}
+            {/* Settling / Claim Alert (Winner Only) */}
             {settling && (
-                <div className="p-6 bg-[var(--s1)] border border-[var(--acid)] text-center">
-                    <div className="flex items-center justify-center gap-2 text-[var(--acid)] mb-2">
+                <div className="p-6 bg-[var(--s1)] border border-[var(--acid)] text-center space-y-3">
+                    <div className="flex items-center justify-center gap-2 text-[var(--acid)]">
                         <Trophy className="h-4 w-4" />
                         <span className="utd-pixel text-xs">
-                            {duel.winnerSide === 0 ? duel.tokenA.symbol : duel.tokenB.symbol} WINS THE MATCH
+                            {winningToken.symbol} WINS THE MATCH
                         </span>
                     </div>
-                    <p className="utd-body text-xs text-[var(--dim)] max-w-md mx-auto mb-4">
-                        Oracle signature verified. Payout is submitted automatically; anyone can also trigger it now.
-                    </p>
-                    <button
-                        disabled={claiming}
-                        onClick={handleClaimSettlement}
-                        className="utd-btn py-2.5 px-6 text-[10px]"
-                    >
-                        {claiming ? "CONFIRMING ON-CHAIN…" : "TRIGGER ESCROW PAYOUT →"}
-                    </button>
+
+                    {isWinner ? (
+                        <>
+                            <p className="utd-pixel text-xs text-[var(--acid)]">
+                                YOU WON! CLAIM YOUR WINNINGS
+                            </p>
+                            <p className="utd-body text-xs text-[var(--dim)] max-w-md mx-auto">
+                                Oracle signature verified. As the winner, trigger on-chain settlement to receive your 80% pot payout (${(duel.buyInUsd * 2 * 0.8).toFixed(0)} USD).
+                            </p>
+                            <div className="pt-1">
+                                <button
+                                    disabled={claiming}
+                                    onClick={handleClaimSettlement}
+                                    className="utd-btn py-2.5 px-8 text-[11px]"
+                                >
+                                    {claiming ? "CLAIMING ON-CHAIN…" : "CLAIM WINNINGS →"}
+                                </button>
+                            </div>
+                        </>
+                    ) : isLoser ? (
+                        <>
+                            <p className="utd-pixel text-[10px] text-[var(--hot)]">
+                                YOU LOST THIS DUEL
+                            </p>
+                            <p className="utd-body text-xs text-[var(--dim)] max-w-md mx-auto">
+                                Only the winner ({winnerWallet ? `${winnerWallet.slice(0, 6)}…${winnerWallet.slice(-4)}` : "winning wallet"}) can settle the match and claim the pot.
+                            </p>
+                            <div className="pt-1">
+                                <span className="inline-block font-mono text-[10px] text-[var(--faint)] border border-[var(--line)] bg-[var(--s0)] px-3 py-1.5 uppercase">
+                                    Awaiting Winner Settlement
+                                </span>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <p className="utd-body text-xs text-[var(--dim)] max-w-md mx-auto">
+                                Oracle signature verified. Only the winner ({winnerWallet ? `${winnerWallet.slice(0, 6)}…${winnerWallet.slice(-4)}` : "winning wallet"}) can settle the match and claim the pot.
+                            </p>
+                            <div className="pt-1">
+                                <span className="inline-block font-mono text-[10px] text-[var(--dim)] border border-[var(--line)] bg-[var(--s0)] px-3 py-1.5 uppercase">
+                                    {address ? "Awaiting Winner Settlement" : "Connect Winner Wallet to Settle"}
+                                </span>
+                            </div>
+                        </>
+                    )}
                 </div>
             )}
 
@@ -423,6 +469,60 @@ export default function DuelDetailPage() {
                     </button>
                 </div>
             )}
+
+            {/* Tug-of-War Battle Momentum */}
+            {(() => {
+                const gainDiff = gainA - gainB
+                const tugPctA = Math.max(10, Math.min(90, 50 + gainDiff * 2.5))
+                const tugPctB = 100 - tugPctA
+                return (
+                    <div className="p-4 bg-[var(--s1)] border border-[var(--line)] space-y-2.5">
+                        <div className="flex items-center justify-between text-xs font-mono">
+                            <div className="flex items-center gap-2">
+                                <SideTag side="A" label={duel.tokenA.symbol} />
+                                <span className={`font-mono text-xs font-semibold ${gainA >= 0 ? "text-[var(--acid)]" : "text-[var(--hot)]"}`}>
+                                    {gainA >= 0 ? "+" : ""}{gainA.toFixed(1)}%
+                                </span>
+                            </div>
+                            <div className="utd-pixel text-[8px] text-[var(--acid)] text-center tracking-wide">
+                                {gainA === gainB
+                                    ? "EVEN ROUND (50/50)"
+                                    : gainA > gainB
+                                      ? `${duel.tokenA.symbol} LEADS BY +${(gainA - gainB).toFixed(1)}%`
+                                      : `${duel.tokenB.symbol} LEADS BY +${(gainB - gainA).toFixed(1)}%`}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className={`font-mono text-xs font-semibold ${gainB >= 0 ? "text-[var(--acid)]" : "text-[var(--cool)]"}`}>
+                                    {gainB >= 0 ? "+" : ""}{gainB.toFixed(1)}%
+                                </span>
+                                <SideTag side="B" label={duel.tokenB.symbol} />
+                            </div>
+                        </div>
+
+                        <div className="relative h-2.5 w-full bg-[var(--s0)] border border-[var(--line-2)] overflow-hidden flex">
+                            <div
+                                className="h-full bg-[var(--hot)] transition-all duration-500"
+                                style={{ width: `${tugPctA}%` }}
+                            />
+                            <div
+                                className="h-full bg-[var(--cool)] transition-all duration-500"
+                                style={{ width: `${tugPctB}%` }}
+                            />
+                            {/* Single Battle Momentum Divider */}
+                            <div
+                                className="absolute top-0 bottom-0 w-0.5 bg-white shadow-[0_0_6px_#fff] -translate-x-1/2 z-10 transition-all duration-500"
+                                style={{ left: `${tugPctA}%` }}
+                            />
+                        </div>
+
+                        <div className="flex justify-between items-center font-mono text-[9px] text-[var(--faint)]">
+                            <span>◄ {duel.tokenA.symbol} MOMENTUM</span>
+                            <span className="text-[var(--dim)]">50/50 BASELINE</span>
+                            <span>{duel.tokenB.symbol} MOMENTUM ►</span>
+                        </div>
+                    </div>
+                )
+            })()}
 
             {/* Combat Arena: Side A vs Side B */}
             <div className="grid items-stretch gap-6 md:grid-cols-[1fr_auto_1fr]">
@@ -465,6 +565,7 @@ export default function DuelDetailPage() {
                     isYours={myWallet && (isCreator ? duel.creatorSide === 1 : duel.creatorSide === 0)}
                 />
             </div>
+
 
             {/* Settled Victory Callout */}
             {settled && (
@@ -599,21 +700,6 @@ function BattlePanel({
     isYours?: boolean
 }) {
     const isSideA = side === "A"
-    const color = isSideA ? "var(--hot)" : "var(--cool)"
-    // Bidirectional scale centered on a 50% "zero" line: +/-50% gain maps to
-    // the full bar width either side of center, so a flat or losing token
-    // visibly shows little-to-no fill instead of always looking ~half full.
-    const toBarPosition = (pct: number) => 50 + Math.max(-50, Math.min(50, pct))
-    const livePos = toBarPosition(liveGainPct)
-    // Real gains here are often well under 1% -- a literal-width fill would be
-    // a 1-2px sliver that reads as "nothing rendered." Any nonzero gain gets
-    // boosted to at least MIN_VISIBLE_FILL_PCT of the bar so it's actually
-    // visible, without changing which side of center it's on. Exactly flat
-    // (gainPct === 0, e.g. a fresh LIVE duel) stays at zero width on purpose.
-    const MIN_VISIBLE_FILL_PCT = 3
-    const clampedGain = Math.max(-50, Math.min(50, gainPct))
-    const fillWidth = clampedGain === 0 ? 0 : Math.max(MIN_VISIBLE_FILL_PCT, Math.abs(clampedGain))
-    const fillLeft = clampedGain >= 0 ? 50 : 50 - fillWidth
 
     return (
         <div
@@ -649,47 +735,46 @@ function BattlePanel({
                 )}
             </div>
 
-            <div className="mt-6 space-y-4">
-                {/* Horizontal Progress Bar */}
-                <div>
-                    <div className="flex justify-between items-center text-xs mb-1.5 font-mono">
-                        <span className="text-[var(--faint)]">Validated Gain</span>
-                        <span className="flex items-center gap-2">
-                            <span className="inline-flex items-center gap-1 text-[10px] text-[var(--faint)]">
-                                <span className="h-1.5 w-1.5 rounded-full bg-white/80 animate-pulse" />
-                                LIVE {liveGainPct >= 0 ? "+" : ""}{liveGainPct.toFixed(1)}%
-                            </span>
-                            <span
-                                className={`font-semibold ${
+            <div className="mt-5 space-y-4">
+                {/* Official Score vs Live Market */}
+                <div className="p-3.5 bg-[var(--s0)] border border-[var(--line)]">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <div className="font-mono text-[9px] text-[var(--faint)] uppercase tracking-wider">
+                                Sustained Peak Gain
+                            </div>
+                            <div
+                                className={`font-mono text-xl font-bold mt-0.5 ${
                                     gainPct >= 0 ? "text-[var(--acid)]" : "text-[var(--hot)]"
                                 }`}
                             >
-                                {gainPct >= 0 ? "+" : ""}{gainPct.toFixed(1)}%
-                            </span>
-                        </span>
-                    </div>
-                    <div className="relative h-2 w-full bg-[var(--s0)] border border-[var(--line)] overflow-hidden">
-                        {/* Zero line: the fill and live marker are both positioned relative to this center, not the left edge. */}
-                        <div className="absolute top-0 h-full w-px bg-[var(--line-2)]" style={{ left: "50%" }} />
-                        <div
-                            className="absolute top-0 h-full transition-all duration-500"
-                            style={{
-                                left: `${fillLeft}%`,
-                                width: `${fillWidth}%`,
-                                backgroundColor: color,
-                            }}
-                        />
-                        {/* Live marker: current (unvalidated) reading, ticks every poll independent of the validated fill above. */}
-                        <div
-                            className="absolute top-0 h-full w-0.5 bg-white transition-all duration-500"
-                            style={{ left: `${livePos}%` }}
-                            title={`Live: ${liveGainPct >= 0 ? "+" : ""}${liveGainPct.toFixed(1)}%`}
-                        />
+                                {gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%
+                            </div>
+                        </div>
+                        <div className="text-right">
+                            <div className="font-mono text-[9px] text-[var(--faint)] uppercase tracking-wider">
+                                Live Market
+                            </div>
+                            <div className="font-mono text-xs mt-1.5 flex items-center justify-end gap-1.5">
+                                <span
+                                    className={`h-1.5 w-1.5 rounded-full animate-pulse ${
+                                        liveGainPct >= 0 ? "bg-[var(--acid)]" : "bg-[var(--hot)]"
+                                    }`}
+                                />
+                                <span
+                                    className={`font-semibold ${
+                                        liveGainPct >= 0 ? "text-[var(--acid)]" : "text-[var(--hot)]"
+                                    }`}
+                                >
+                                    {liveGainPct >= 0 ? "+" : ""}{liveGainPct.toFixed(2)}%
+                                </span>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 {/* Metrics Matrix */}
-                <div className="grid grid-cols-3 gap-px bg-[var(--line)] pt-2">
+                <div className="grid grid-cols-3 gap-px bg-[var(--line)]">
                     <div className="bg-[var(--s0)] p-3">
                         <div className="font-mono text-[10px] text-[var(--faint)]">STARTING MC</div>
                         <div className="font-mono text-xs text-white mt-1">{formatUsd(startMc)}</div>
@@ -706,6 +791,7 @@ function BattlePanel({
 
                 <GmgnLink tokenAddress={tokenAddress} symbol={symbol} className="h-10 w-full" />
             </div>
+
         </div>
     )
 }
