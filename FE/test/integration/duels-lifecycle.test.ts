@@ -81,7 +81,7 @@ function mockCreatedEvent(
     event: {
       buyIn: overrides.buyIn ?? 100_000_000_000_000_000_000n, // 100e18
       creatorSide: overrides.creatorSide ?? 0,
-      durationSeconds: overrides.durationSeconds ?? 1_200n, // 20 minutes -- within matchmaking's 15-40min bounds
+      durationSeconds: overrides.durationSeconds ?? 1_200n, // 20 minutes -- within matchmaking's 5-20min bounds
       // Matches setupTop10()'s fixed 'FOO'/'BAR' symbols, which every caller
       // in this file uses -- POST /api/duels now requires these to equal the
       // request body's tokenASymbol/tokenBSymbol (see app/api/duels/route.ts).

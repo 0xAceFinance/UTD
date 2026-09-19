@@ -143,7 +143,7 @@ contract BattleEscrowAdversarialTest is Test {
 
     function test_cannotExpireAfterActivated() public {
         address duel = _createAndActivateDuel();
-        vm.warp(block.timestamp + 61 minutes);
+        vm.warp(block.timestamp + BattleEscrow(duel).MAX_OPEN_WINDOW() + 1);
         vm.expectRevert("not open");
         factory.expireDuel(duel);
     }
@@ -201,7 +201,7 @@ contract BattleEscrowAdversarialTest is Test {
 
     function test_expireIsIntentionallyPermissionless_worksWithoutGoingThroughFactory() public {
         address duel = _createDuel();
-        vm.warp(block.timestamp + 61 minutes);
+        vm.warp(block.timestamp + BattleEscrow(duel).MAX_OPEN_WINDOW() + 1);
         // called directly on the clone, not via factory.expireDuel — this must still work,
         // that's the documented design ("permissionless on purpose").
         vm.prank(rando);

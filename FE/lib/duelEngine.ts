@@ -210,6 +210,42 @@ export async function maybeSettle(duel: IDuel, { relay = true }: { relay?: boole
 }
 
 /**
+ * Repairs a duel stuck at SETTLING with no oracleSignature -- maybeSettle
+ * commits the LIVE -> SETTLING transition (the atomic claim above) before it
+ * has a signature in hand, so if signSettlement() ever throws (a misconfigured
+ * ORACLE_SIGNER_PRIVATE_KEY, a transient RPC failure reading the escrow's
+ * settlementSigner(), ...), the duel is left in the DB at SETTLING with
+ * winnerSide/oracleSignature never persisted -- and nothing else in this
+ * codebase ever revisits a non-LIVE duel, so without this it stays stuck
+ * forever. Called from the cron and the self-healing GET route below.
+ *
+ * Safe to retry indefinitely: the sybil check already passed the first time
+ * (a flagged match goes HELD, never SETTLING), and the winner is already
+ * locked in via each side's final sustainedPeakMarketCapUsd, so this only
+ * ever needs to (re)attempt signing -- never re-touches funds or re-derives
+ * the winner from scratch. The final write is an atomic compare-and-swap
+ * keyed on oracleSignature not yet being set, so concurrent callers (a cron
+ * run overlapping a page load) can't both persist competing state -- at
+ * worst both produce a validly-signed message and only one write lands,
+ * which is harmless since either signature verifies on-chain.
+ */
+export async function retrySettlementSigning(duel: IDuel): Promise<void> {
+  if (duel.status !== 'SETTLING' || !duel.escrowAddress || duel.oracleSignature) return;
+
+  const winnerSide = duel.winnerSide ?? computeWinnerSide(duel);
+  const oracleSignature = await signSettlement(duel.escrowAddress as `0x${string}`, winnerSide);
+
+  const claimed = await Duel.findOneAndUpdate(
+    { _id: duel._id, status: 'SETTLING', oracleSignature: { $exists: false } },
+    { $set: { winnerSide, oracleSignature } }
+  );
+  if (claimed) {
+    duel.winnerSide = winnerSide;
+    duel.oracleSignature = oracleSignature;
+  }
+}
+
+/**
  * Pushes the freshly-signed result on-chain without making the caller wait
  * for it, so the winner's payout doesn't depend on anyone clicking "Claim"
  * before BattleEscrow.refundStale() opens at endTime + 24h (at which point

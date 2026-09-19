@@ -1,6 +1,6 @@
 import { connectToDatabase } from '@/lib/mongoose';
 import Duel from '@/lib/models/Duel';
-import { maybeSettle } from '@/lib/duelEngine';
+import { maybeSettle, retrySettlementSigning } from '@/lib/duelEngine';
 import { submitSettlement, type RelayOutcome } from '@/lib/settlementRelayer';
 import { isAuthorizedCron } from '@/lib/adminAuth';
 import { success, failure } from '@/utils/response';
@@ -19,9 +19,13 @@ const HELD_ALERT_AFTER_MS = 12 * 60 * 60 * 1000;
  * independent of anyone having the duel page open:
  *  1. signs every LIVE duel whose timer has run out (maybeSettle -- until now
  *     this only happened when someone happened to GET the duel);
- *  2. submits settle() for every signed SETTLING duel (lib/settlementRelayer.ts),
+ *  2. retries signing for any duel stranded at SETTLING with no signature yet
+ *     (retrySettlementSigning -- see its doc comment for how a duel ends up
+ *     here: maybeSettle's LIVE->SETTLING claim lands before signing does, so
+ *     a signing failure of any kind otherwise strands it forever);
+ *  3. submits settle() for every signed SETTLING duel (lib/settlementRelayer.ts),
  *     retrying each run until it lands, pauses included;
- *  3. flags HELD duels still unresolved 12h after endTime, since at 24h
+ *  4. flags HELD duels still unresolved 12h after endTime, since at 24h
  *     refundStale() lets the loser walk away with their stake.
  */
 export async function GET(req: Request) {
@@ -44,6 +48,23 @@ export async function GET(req: Request) {
             }
         }
 
+        const stranded = await Duel.find({
+            status: 'SETTLING',
+            escrowAddress: { $exists: true },
+            oracleSignature: { $exists: false },
+        })
+            .sort({ endTime: 1 })
+            .limit(BATCH);
+        let repaired = 0;
+        for (const duel of stranded) {
+            try {
+                await retrySettlementSigning(duel);
+                if (duel.oracleSignature) repaired += 1;
+            } catch (err) {
+                console.error(`[cron/settle] retrySettlementSigning ${duel._id}: ${(err as Error).message}`);
+            }
+        }
+
         const settling = await Duel.find({
             status: 'SETTLING',
             escrowAddress: { $exists: true },
@@ -63,7 +84,7 @@ export async function GET(req: Request) {
             .lean();
         if (overdueHeld.length > 0) await alertOverdueHeld(overdueHeld, now);
 
-        return success({ signed, relayed, overdueHeld: overdueHeld.map((d) => String(d._id)) });
+        return success({ signed, repaired, relayed, overdueHeld: overdueHeld.map((d) => String(d._id)) });
     } catch (err) {
         console.error(`[cron/settle] ${(err as Error).message}`);
         return failure((err as Error).message);
