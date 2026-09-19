@@ -13,12 +13,19 @@ export default function TokensPage() {
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        fetch("/api/duel-tokens")
-            .then((r) => r.json())
-            .then((json) => {
-                if (json.success) setTokens(json.data)
-            })
-            .finally(() => setLoading(false))
+        const load = () =>
+            fetch("/api/duel-tokens")
+                .then((r) => r.json())
+                .then((json) => {
+                    if (json.success) setTokens(json.data)
+                })
+                .finally(() => setLoading(false))
+
+        load()
+        // Market caps re-price server-side every ~20s (GET /api/duel-tokens);
+        // polling here is what actually surfaces that movement in the list.
+        const id = setInterval(load, 20_000)
+        return () => clearInterval(id)
     }, [])
 
     return (

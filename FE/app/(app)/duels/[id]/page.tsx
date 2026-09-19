@@ -327,6 +327,8 @@ export default function DuelDetailPage() {
     // LIVE, SETTLING, HELD, or SETTLED
     const gainA = pctReturn(duel.tokenA.startMarketCapUsd, duel.tokenA.sustainedPeakMarketCapUsd)
     const gainB = pctReturn(duel.tokenB.startMarketCapUsd, duel.tokenB.sustainedPeakMarketCapUsd)
+    const liveGainA = pctReturn(duel.tokenA.startMarketCapUsd, duel.tokenA.currentMarketCapUsd)
+    const liveGainB = pctReturn(duel.tokenB.startMarketCapUsd, duel.tokenB.currentMarketCapUsd)
     const leading = gainA >= gainB ? "A" : "B"
     const settled = duel.status === "SETTLED"
     const settling = duel.status === "SETTLING"
@@ -431,6 +433,8 @@ export default function DuelDetailPage() {
                     name={duel.tokenA.name}
                     tokenAddress={duel.tokenA.tokenAddress}
                     startMc={duel.tokenA.startMarketCapUsd}
+                    currentMc={duel.tokenA.currentMarketCapUsd}
+                    liveGainPct={liveGainA}
                     gainPct={gainA}
                     leading={leading === "A"}
                     peak={duel.tokenA.sustainedPeakMarketCapUsd}
@@ -452,6 +456,8 @@ export default function DuelDetailPage() {
                     name={duel.tokenB.name}
                     tokenAddress={duel.tokenB.tokenAddress}
                     startMc={duel.tokenB.startMarketCapUsd}
+                    currentMc={duel.tokenB.currentMarketCapUsd}
+                    liveGainPct={liveGainB}
                     gainPct={gainB}
                     leading={leading === "B"}
                     peak={duel.tokenB.sustainedPeakMarketCapUsd}
@@ -571,6 +577,8 @@ function BattlePanel({
     name,
     tokenAddress,
     startMc,
+    currentMc,
+    liveGainPct,
     gainPct,
     leading,
     peak,
@@ -582,6 +590,8 @@ function BattlePanel({
     name?: string
     tokenAddress?: string
     startMc: number
+    currentMc: number
+    liveGainPct: number
     gainPct: number
     leading: boolean
     peak: number
@@ -590,7 +600,9 @@ function BattlePanel({
 }) {
     const isSideA = side === "A"
     const color = isSideA ? "var(--hot)" : "var(--cool)"
+    const toBarPct = (pct: number) => Math.max(2, Math.min(98, 50 + pct))
     const barPct = Math.max(5, Math.min(100, 50 + gainPct))
+    const liveBarPct = toBarPct(liveGainPct)
 
     return (
         <div
@@ -631,15 +643,21 @@ function BattlePanel({
                 <div>
                     <div className="flex justify-between items-center text-xs mb-1.5 font-mono">
                         <span className="text-[var(--faint)]">Validated Gain</span>
-                        <span
-                            className={`font-semibold ${
-                                gainPct >= 0 ? "text-[var(--acid)]" : "text-[var(--hot)]"
-                            }`}
-                        >
-                            {gainPct >= 0 ? "+" : ""}{gainPct.toFixed(1)}%
+                        <span className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 text-[10px] text-[var(--faint)]">
+                                <span className="h-1.5 w-1.5 rounded-full bg-white/80 animate-pulse" />
+                                LIVE {liveGainPct >= 0 ? "+" : ""}{liveGainPct.toFixed(1)}%
+                            </span>
+                            <span
+                                className={`font-semibold ${
+                                    gainPct >= 0 ? "text-[var(--acid)]" : "text-[var(--hot)]"
+                                }`}
+                            >
+                                {gainPct >= 0 ? "+" : ""}{gainPct.toFixed(1)}%
+                            </span>
                         </span>
                     </div>
-                    <div className="h-2 w-full bg-[var(--s0)] border border-[var(--line)] overflow-hidden">
+                    <div className="relative h-2 w-full bg-[var(--s0)] border border-[var(--line)] overflow-hidden">
                         <div
                             className="h-full transition-all duration-500"
                             style={{
@@ -647,14 +665,24 @@ function BattlePanel({
                                 backgroundColor: color,
                             }}
                         />
+                        {/* Live marker: current (unvalidated) reading, ticks every poll independent of the validated fill above. */}
+                        <div
+                            className="absolute top-0 h-full w-0.5 bg-white transition-all duration-500"
+                            style={{ left: `${liveBarPct}%` }}
+                            title={`Live: ${liveGainPct >= 0 ? "+" : ""}${liveGainPct.toFixed(1)}%`}
+                        />
                     </div>
                 </div>
 
                 {/* Metrics Matrix */}
-                <div className="grid grid-cols-2 gap-px bg-[var(--line)] pt-2">
+                <div className="grid grid-cols-3 gap-px bg-[var(--line)] pt-2">
                     <div className="bg-[var(--s0)] p-3">
                         <div className="font-mono text-[10px] text-[var(--faint)]">STARTING MC</div>
                         <div className="font-mono text-xs text-white mt-1">{formatUsd(startMc)}</div>
+                    </div>
+                    <div className="bg-[var(--s0)] p-3">
+                        <div className="font-mono text-[10px] text-[var(--faint)]">CURRENT MC</div>
+                        <div className="font-mono text-xs text-white mt-1">{formatUsd(currentMc)}</div>
                     </div>
                     <div className="bg-[var(--s0)] p-3">
                         <div className="font-mono text-[10px] text-[var(--faint)]">SUSTAINED PEAK</div>
