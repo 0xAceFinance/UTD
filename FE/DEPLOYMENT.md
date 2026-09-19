@@ -81,8 +81,8 @@ need to reach this service without a GCP identity token. The route-level
 checks already in the code (`x-admin-secret`, the cron bearer token, on-chain
 tx verification) are what actually gate access, same as they do today.
 
-Note the **Service URL** the command prints
-(`https://utd-backend-xxxxx-uc.a.run.app` or similar) — you need it in both
+Note the **Service URL**:
+`https://utd-backend-998336196389.us-central1.run.app` — you need it in both
 of the next two parts.
 
 If the deploy fails with a Secret Manager permission error, grant the Cloud
