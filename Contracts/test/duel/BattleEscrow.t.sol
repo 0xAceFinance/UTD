@@ -189,11 +189,11 @@ contract BattleEscrowTest is Test {
     function test_durationOutOfRangeReverts() public {
         vm.prank(creator);
         vm.expectRevert("duration out of range");
-        factory.createDuel(address(stakeToken), BUY_IN, 0, 5 minutes, "A", "B");
+        factory.createDuel(address(stakeToken), BUY_IN, 0, 4 minutes, "A", "B");
 
         vm.prank(creator);
         vm.expectRevert("duration out of range");
-        factory.createDuel(address(stakeToken), BUY_IN, 0, 41 minutes, "A", "B");
+        factory.createDuel(address(stakeToken), BUY_IN, 0, 25 minutes, "A", "B");
     }
 
     function test_onlyOwnerCanUpdateOracleSignerOrTreasury() public {

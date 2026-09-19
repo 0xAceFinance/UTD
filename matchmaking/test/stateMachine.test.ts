@@ -189,9 +189,16 @@ describe("lobby state machine — invalid transitions are rejected, not silently
     expect(() => cancel(lobby, "0xCreator")).toThrow(InvalidTransitionError);
   });
 
-  it("rejects a duration outside the 15-40 minute window", () => {
-    expect(() => baseLobby({ durationSeconds: 5 * 60 })).toThrow("between 15 and 40 minutes");
-    expect(() => baseLobby({ durationSeconds: 45 * 60 })).toThrow("between 15 and 40 minutes");
+  it("rejects a duration outside the 5-20 minute window", () => {
+    expect(() => baseLobby({ durationSeconds: 4 * 60 })).toThrow("5, 10, 15 or 20 minutes");
+    expect(() => baseLobby({ durationSeconds: 25 * 60 })).toThrow("5, 10, 15 or 20 minutes");
+  });
+
+  it("accepts exactly 5, 10, 15 and 20 minutes, and nothing between them", () => {
+    for (const m of [5, 10, 15, 20]) expect(() => baseLobby({ durationSeconds: m * 60 })).not.toThrow();
+    for (const d of [7 * 60, 12 * 60 + 30, 19 * 60]) {
+      expect(() => baseLobby({ durationSeconds: d })).toThrow("5, 10, 15 or 20 minutes");
+    }
   });
 
   it("refuses to let the creator join their own lobby", () => {
@@ -209,13 +216,13 @@ describe("lobby state machine — invalid transitions are rejected, not silently
 
 describe("lobby state machine — boundary conditions on timestamps and durations", () => {
   it("accepts the exact minimum and maximum durations", () => {
-    expect(() => baseLobby({ durationSeconds: 15 * 60 })).not.toThrow();
-    expect(() => baseLobby({ durationSeconds: 40 * 60 })).not.toThrow();
+    expect(() => baseLobby({ durationSeconds: 5 * 60 })).not.toThrow();
+    expect(() => baseLobby({ durationSeconds: 20 * 60 })).not.toThrow();
   });
 
   it("rejects a duration one second outside either bound", () => {
-    expect(() => baseLobby({ durationSeconds: 15 * 60 - 1 })).toThrow("between 15 and 40 minutes");
-    expect(() => baseLobby({ durationSeconds: 40 * 60 + 1 })).toThrow("between 15 and 40 minutes");
+    expect(() => baseLobby({ durationSeconds: 5 * 60 - 1 })).toThrow("5, 10, 15 or 20 minutes");
+    expect(() => baseLobby({ durationSeconds: 20 * 60 + 1 })).toThrow("5, 10, 15 or 20 minutes");
   });
 
   it("allows joining exactly at the open deadline (inclusive boundary)", () => {
@@ -228,13 +235,14 @@ describe("lobby state machine — boundary conditions on timestamps and duration
     expect(() => expire(lobby, lobby.openDeadlineSec)).toThrow("has not passed yet");
   });
 
-  it("fuzzes duration bounds across the boundary: throws iff outside [min, max] inclusive", () => {
+  it("fuzzes durations: throws iff not a 5-minute step within [5, 20] minutes", () => {
     const rng = mulberry32(42);
-    const min = 15 * 60;
-    const max = 40 * 60;
+    const min = 5 * 60;
+    const max = 20 * 60;
     for (let i = 0; i < 300; i++) {
-      const d = Math.floor(rng() * (max - min + 200)) + (min - 100);
-      const shouldThrow = d < min || d > max;
+      // Bias half the draws onto exact 5-minute steps so the accepted path is exercised too.
+      const d = i % 2 === 0 ? Math.round((rng() * 30) / 5) * 5 * 60 : Math.floor(rng() * (max - min + 200)) + (min - 100);
+      const shouldThrow = d < min || d > max || d % 300 !== 0;
       if (shouldThrow) {
         expect(() => baseLobby({ durationSeconds: d })).toThrow();
       } else {

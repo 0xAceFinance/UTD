@@ -22,7 +22,7 @@ export default function CreateDuelPage() {
     const [tokenB, setTokenB] = useState<string | null>(null)
     const [side, setSide] = useState<0 | 1>(0)
     const [buyIn, setBuyIn] = useState(100)
-    const [duration, setDuration] = useState(25)
+    const [duration, setDuration] = useState(10)
     const [submitting, setSubmitting] = useState(false)
     const [stage, setStage] = useState<"idle" | "wallet" | "saving">("idle")
     const factory = useFactoryState()
@@ -252,16 +252,17 @@ export default function CreateDuelPage() {
 
                 <div className="border border-[var(--line)] bg-[var(--s1)] p-5 space-y-4">
                     <Slider
-                        min={15}
-                        max={40}
+                        min={5}
+                        max={20}
                         step={5}
                         value={[duration]}
                         onValueChange={([v]) => setDuration(v)}
                     />
                     <div className="flex justify-between font-mono text-xs text-[var(--faint)]">
-                        <span>15m (fast)</span>
-                        <span>25m (standard)</span>
-                        <span>40m (extended)</span>
+                        <span>5m</span>
+                        <span>10m</span>
+                        <span>15m</span>
+                        <span>20m</span>
                     </div>
                 </div>
             </div>

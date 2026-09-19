@@ -159,7 +159,7 @@ implementation.
   approvedStakeToken` (the one stake token this factory accepts — blocks
   farming points with a self-minted worthless token, or a rebasing/fee-taking
   token that could leave payouts stuck), `creatorSide in {0,1}`, and
-  `durationSeconds in [MIN_DURATION=15min, MAX_DURATION=40min]`, clones the
+  `durationSeconds` is one of 5, 10, 15 or 20 minutes (`MIN_DURATION=5min`, `MAX_DURATION=20min`, `DURATION_STEP=5min`), clones the
   implementation, pulls the creator's stake straight into the new clone, then
   calls `initialize` on it. Registers the clone in `isDuel`.
 - `joinDuel(address duel)` / `cancelDuel(address duel)` /
@@ -236,7 +236,7 @@ bounded regardless of how many points a wallet has banked.
    factory reads `joinTerms()` off the clone, pulls the same `buyIn` from the
    opponent into the clone, then calls `activate(opponent)`, which flips the
    clone to `Active` and fixes `startTime`/`endTime = startTime +
-   durationSeconds` (15-40 minutes, enforced at creation).
+   durationSeconds` (5, 10, 15 or 20 minutes, enforced at creation).
 3. **No-match path.** If nobody joins before the 60-minute open window
    elapses, anyone can call `BattleEscrowFactory.expireDuel(duel)`
    (permissionless) to refund the creator and set `status = Refunded`.

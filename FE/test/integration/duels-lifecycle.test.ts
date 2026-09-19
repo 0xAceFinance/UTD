@@ -71,7 +71,7 @@ function mockCreatedEvent(overrides: Partial<{ creatorSide: 0 | 1; durationSecon
     event: {
       buyIn: overrides.buyIn ?? 100_000_000_000_000_000_000n, // 100e18
       creatorSide: overrides.creatorSide ?? 0,
-      durationSeconds: overrides.durationSeconds ?? 1_200n, // 20 minutes -- within matchmaking's 15-40min bounds
+      durationSeconds: overrides.durationSeconds ?? 1_200n, // 20 minutes -- one of the allowed 5/10/15/20 min durations
     },
   });
 }

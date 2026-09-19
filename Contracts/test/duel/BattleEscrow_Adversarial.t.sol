@@ -455,6 +455,32 @@ contract BattleEscrowAdversarialTest is Test {
         factory.createDuel(address(stakeToken), BUY_IN, 0, tooLong, "A", "B");
     }
 
+    function test_everyAllowedDurationSucceeds() public {
+        uint256[4] memory allowed = [uint256(5 minutes), 10 minutes, 15 minutes, 20 minutes];
+        for (uint256 i = 0; i < allowed.length; i++) {
+            vm.prank(creator);
+            address duel = factory.createDuel(address(stakeToken), BUY_IN, 0, allowed[i], "A", "B");
+            assertEq(BattleEscrow(duel).durationSeconds(), allowed[i]);
+        }
+    }
+
+    function test_durationBetweenStepsReverts() public {
+        uint256[4] memory rejected = [uint256(7 minutes), 12 minutes + 30, 19 minutes, 25 minutes];
+        for (uint256 i = 0; i < rejected.length; i++) {
+            vm.prank(creator);
+            vm.expectRevert("duration out of range");
+            factory.createDuel(address(stakeToken), BUY_IN, 0, rejected[i], "A", "B");
+        }
+    }
+
+    function testFuzz_durationAcceptedIffAllowedStep(uint256 d) public {
+        d = bound(d, 0, 60 minutes);
+        bool allowed = d >= 5 minutes && d <= 20 minutes && d % 5 minutes == 0;
+        vm.prank(creator);
+        if (!allowed) vm.expectRevert("duration out of range");
+        factory.createDuel(address(stakeToken), BUY_IN, 0, d, "A", "B");
+    }
+
     function test_buyInZeroReverts() public {
         vm.prank(creator);
         vm.expectRevert("bad buyIn");

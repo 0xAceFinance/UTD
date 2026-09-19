@@ -39,8 +39,10 @@ contract BattleEscrowFactory is Ownable, Pausable {
     using SafeERC20 for IERC20;
     using Clones for address;
 
-    uint256 public constant MIN_DURATION = 15 minutes;
-    uint256 public constant MAX_DURATION = 40 minutes;
+    /// @dev A duel runs for exactly 5, 10, 15 or 20 minutes.
+    uint256 public constant MIN_DURATION = 5 minutes;
+    uint256 public constant MAX_DURATION = 20 minutes;
+    uint256 public constant DURATION_STEP = 5 minutes;
     uint256 public constant ORACLE_SIGNER_TIMELOCK_DELAY = 24 hours;
 
     address public immutable escrowImplementation;
@@ -106,7 +108,10 @@ contract BattleEscrowFactory is Ownable, Pausable {
     ) external whenNotPaused returns (address duel) {
         require(stakeToken == approvedStakeToken, "stake token not approved");
         require(creatorSide == 0 || creatorSide == 1, "bad side");
-        require(durationSeconds >= MIN_DURATION && durationSeconds <= MAX_DURATION, "duration out of range");
+        require(
+            durationSeconds >= MIN_DURATION && durationSeconds <= MAX_DURATION && durationSeconds % DURATION_STEP == 0,
+            "duration out of range"
+        );
         require(buyIn >= minBuyIn, "bad buyIn");
 
         duel = escrowImplementation.clone();
