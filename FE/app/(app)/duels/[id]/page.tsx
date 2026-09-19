@@ -600,9 +600,14 @@ function BattlePanel({
 }) {
     const isSideA = side === "A"
     const color = isSideA ? "var(--hot)" : "var(--cool)"
-    const toBarPct = (pct: number) => Math.max(2, Math.min(98, 50 + pct))
-    const barPct = Math.max(5, Math.min(100, 50 + gainPct))
-    const liveBarPct = toBarPct(liveGainPct)
+    // Bidirectional scale centered on a 50% "zero" line: +/-50% gain maps to
+    // the full bar width either side of center, so a flat or losing token
+    // visibly shows little-to-no fill instead of always looking ~half full.
+    const toBarPosition = (pct: number) => 50 + Math.max(-50, Math.min(50, pct))
+    const validatedPos = toBarPosition(gainPct)
+    const livePos = toBarPosition(liveGainPct)
+    const fillLeft = Math.min(50, validatedPos)
+    const fillWidth = Math.abs(validatedPos - 50)
 
     return (
         <div
@@ -658,17 +663,20 @@ function BattlePanel({
                         </span>
                     </div>
                     <div className="relative h-2 w-full bg-[var(--s0)] border border-[var(--line)] overflow-hidden">
+                        {/* Zero line: the fill and live marker are both positioned relative to this center, not the left edge. */}
+                        <div className="absolute top-0 h-full w-px bg-[var(--line-2)]" style={{ left: "50%" }} />
                         <div
-                            className="h-full transition-all duration-500"
+                            className="absolute top-0 h-full transition-all duration-500"
                             style={{
-                                width: `${barPct}%`,
+                                left: `${fillLeft}%`,
+                                width: `${fillWidth}%`,
                                 backgroundColor: color,
                             }}
                         />
                         {/* Live marker: current (unvalidated) reading, ticks every poll independent of the validated fill above. */}
                         <div
                             className="absolute top-0 h-full w-0.5 bg-white transition-all duration-500"
-                            style={{ left: `${liveBarPct}%` }}
+                            style={{ left: `${livePos}%` }}
                             title={`Live: ${liveGainPct >= 0 ? "+" : ""}${liveGainPct.toFixed(1)}%`}
                         />
                     </div>
