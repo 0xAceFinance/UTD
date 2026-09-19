@@ -3,6 +3,7 @@ import "./app.css"
 import Header from "./components/Header"
 import Sidebar from "./components/Sidebar"
 import BottomNav from "./components/BottomNav"
+import { MobileWalletBanner } from "./components/MobileWalletBanner"
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -11,6 +12,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
       <div className="lg:pl-60">
         <Header />
+        <MobileWalletBanner />
         {/* Bottom padding clears the fixed tab bar (+ home indicator) on phones. */}
         <main className="mx-auto max-w-6xl px-4 pt-5 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 lg:px-8 lg:pt-8 lg:pb-16">
           {children}
