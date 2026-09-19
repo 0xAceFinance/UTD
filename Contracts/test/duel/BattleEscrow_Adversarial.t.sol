@@ -464,6 +464,33 @@ contract BattleEscrowAdversarialTest is Test {
         }
     }
 
+    function test_openWindowIsFiveMinutes() public {
+        vm.prank(creator);
+        address duel = factory.createDuel(address(stakeToken), BUY_IN, 0, 5 minutes, "A", "B");
+        assertEq(BattleEscrow(duel).MAX_OPEN_WINDOW(), 5 minutes);
+        assertEq(BattleEscrow(duel).openDeadline(), block.timestamp + 5 minutes);
+
+        // Joinable up to and including the deadline...
+        vm.warp(block.timestamp + 5 minutes);
+        vm.prank(opponent);
+        factory.joinDuel(duel);
+        assertEq(uint8(BattleEscrow(duel).status()), uint8(BattleEscrow.Status.Active));
+    }
+
+    function test_joinOneSecondAfterFiveMinuteWindowReverts() public {
+        vm.prank(creator);
+        address duel = factory.createDuel(address(stakeToken), BUY_IN, 0, 5 minutes, "A", "B");
+        vm.warp(block.timestamp + 5 minutes + 1);
+        vm.prank(opponent);
+        vm.expectRevert("open window passed");
+        factory.joinDuel(duel);
+
+        // ...and from then on anyone can expire it for the creator's refund.
+        uint256 before = stakeToken.balanceOf(creator);
+        BattleEscrow(duel).expire();
+        assertEq(stakeToken.balanceOf(creator), before + BUY_IN);
+    }
+
     function test_durationBetweenStepsReverts() public {
         uint256[4] memory rejected = [uint256(7 minutes), 12 minutes + 30, 19 minutes, 25 minutes];
         for (uint256 i = 0; i < rejected.length; i++) {

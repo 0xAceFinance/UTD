@@ -1,5 +1,5 @@
 export const LOBBY_CONFIG = {
-  maxOpenWindowSeconds: 60 * 60, // Section 02: unmatched lobbies auto-expire after 60 min
+  maxOpenWindowSeconds: 5 * 60, // unmatched lobbies expire after 5 min (mirrors BattleEscrow.MAX_OPEN_WINDOW)
   // Mirrors BattleEscrowFactory: a duel runs for exactly 5, 10, 15 or 20 minutes.
   minDurationSeconds: 5 * 60,
   maxDurationSeconds: 20 * 60,

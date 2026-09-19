@@ -110,7 +110,7 @@ Refunded` (via `cancel`/`expire`), or `Active -> Refunded` (via
   tokenASymbol, tokenBSymbol) external` — callable exactly once per clone
   (guarded by `initialized`); asserts the creator's stake already landed in
   the clone (the factory transfers it in the same transaction), then opens a
-  `MAX_OPEN_WINDOW = 60 minutes` matchmaking window.
+  `MAX_OPEN_WINDOW = 5 minutes` matchmaking window.
 - `joinTerms() external view returns (address stakeToken, uint256 buyIn)` —
   read by the factory so `joinDuel` knows how much to pull from the opponent.
 - `activate(address opponent) external` — `onlyFactory`; requires the clone

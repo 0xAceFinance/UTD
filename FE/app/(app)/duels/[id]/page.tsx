@@ -206,7 +206,7 @@ export default function DuelDetailPage() {
     const myWallet = isCreator || isOpponent
 
     if (duel.status === "OPEN") {
-        const urgent = openCountdown.totalSec < 300
+        const urgent = openCountdown.totalSec < 60
         const deadlinePassed = openCountdown.totalSec <= 0
         return (
             <div className="mx-auto max-w-xl space-y-4">

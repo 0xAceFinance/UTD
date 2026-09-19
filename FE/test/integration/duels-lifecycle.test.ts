@@ -28,6 +28,7 @@ import { POST as expireDuelRoute } from '@/app/api/duels/[id]/expire/route';
 import { POST as confirmSettlementRoute } from '@/app/api/duels/[id]/confirm-settlement/route';
 import { POST as refundStaleRoute } from '@/app/api/duels/[id]/refund-stale/route';
 import Duel from '@/lib/models/Duel';
+import { readEscrowOpenDeadline } from '@/lib/chainClient';
 import OracleHealthSample from '@/lib/models/OracleHealthSample';
 import CombatRecord from '@/lib/models/CombatRecord';
 import { ensureDbConnected, clearDatabase } from '../helpers/db';
@@ -108,6 +109,16 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await mongoose.connection.close();
+});
+
+describe('create: open deadline', () => {
+  it("stores the escrow's on-chain openDeadline, not the server's clock", async () => {
+    const onChain = new Date('2026-01-01T00:05:00Z');
+    vi.mocked(readEscrowOpenDeadline).mockResolvedValueOnce(onChain);
+    const duel = await createOnChainDuel();
+    expect(new Date(duel.openDeadline).getTime()).toBe(onChain.getTime());
+    expect(readEscrowOpenDeadline).toHaveBeenCalledWith(ESCROW);
+  });
 });
 
 describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {

@@ -42,6 +42,15 @@ function baseLobby(overrides: Partial<Parameters<typeof createLobby>[0]> = {}) {
   });
 }
 
+describe("lobby state machine — open window", () => {
+  it("gives an unmatched lobby exactly 5 minutes to find an opponent", () => {
+    const lobby = baseLobby();
+    expect(lobby.openDeadlineSec).toBe(NOW + 5 * 60);
+    expect(() => submitJoin(lobby, "0xOpponent", NOW + 5 * 60)).not.toThrow();
+    expect(() => submitJoin(lobby, "0xOpponent", NOW + 5 * 60 + 1)).toThrow("open window has already passed");
+  });
+});
+
 describe("lobby state machine — the happy path", () => {
   it("walks OPEN -> MATCHED -> LIVE -> SETTLING -> SETTLED", () => {
     let lobby = baseLobby();
