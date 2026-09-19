@@ -11,8 +11,27 @@ import { routeTitle } from "./nav"
 function WalletButton() {
     return (
         <ConnectKitButton.Custom>
-            {({ isConnected, isConnecting, show, address, ensName }) =>
-                isConnected ? (
+            {({ isConnected, isConnecting, show, address, ensName, unsupported }) => {
+                // unsupported = wallet is connected but on a chain outside
+                // config/wagmiConfig.ts's `chains` list (i.e. not Robinhood
+                // Chain, foundry, or the other configured chains). show()
+                // opens ConnectKit's own network-switch screen, which calls
+                // wagmi's switchChain -- for an injected wallet that hasn't
+                // added Robinhood Chain yet, that falls back to
+                // wallet_addEthereumChain automatically using the metadata
+                // on config/chains.ts's robinhoodChain.
+                if (isConnected && unsupported) {
+                    return (
+                        <button
+                            onClick={show}
+                            className="flex h-9 items-center gap-2 border border-[var(--warn,#e8b71a)] bg-[var(--s1)] px-3 font-mono text-[12px] text-[var(--warn,#e8b71a)] transition-colors hover:border-[var(--warn,#e8b71a)]"
+                        >
+                            <span className="h-1.5 w-1.5 flex-none bg-[var(--warn,#e8b71a)]" />
+                            WRONG NETWORK
+                        </button>
+                    )
+                }
+                return isConnected ? (
                     <button
                         onClick={show}
                         className="flex h-9 items-center gap-2 border border-[var(--line-2)] bg-[var(--s1)] px-3 font-mono text-[12px] text-[var(--txt)] transition-colors hover:border-[var(--acid)]"
@@ -29,7 +48,7 @@ function WalletButton() {
                         {isConnecting ? "CONNECTING…" : "CONNECT"}
                     </button>
                 )
-            }
+            }}
         </ConnectKitButton.Custom>
     )
 }
