@@ -20,7 +20,7 @@ async function executeScanPass() {
     }
 }
 
-export async function POST(req?: Request) {
+export async function POST(req: Request) {
     let loop = false;
     if (req) {
         try {
@@ -66,9 +66,10 @@ export async function POST(req?: Request) {
     }
 }
 
-export async function GET(req?: Request) {
+export async function GET(req: Request) {
     return POST(req);
 }
+
 
 
 
