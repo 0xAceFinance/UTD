@@ -86,6 +86,15 @@ export default function CreateDuelPage() {
             })
 
             setStage("saving")
+            // Snapshot the exact token data the picker showed for this pair --
+            // the on-chain tx above already locked funds against tokenA/tokenB
+            // as strings, so registration below must not depend on the Top 10
+            // list still looking the same by the time this request lands (a
+            // scan can rotate it out from under an in-flight tx). See
+            // app/api/duels/route.ts for how this snapshot is used as a
+            // fallback when the live lookup misses.
+            const tokenASnapshot = tokens.find((t) => t.symbol === tokenA)
+            const tokenBSnapshot = tokens.find((t) => t.symbol === tokenB)
             const res = await fetch("/api/duels", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -93,6 +102,8 @@ export default function CreateDuelPage() {
                     creatorWallet: address,
                     tokenASymbol: tokenA,
                     tokenBSymbol: tokenB,
+                    tokenASnapshot,
+                    tokenBSnapshot,
                     txHash,
                 }),
             })

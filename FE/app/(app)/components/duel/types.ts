@@ -5,6 +5,7 @@ export interface DuelTokenDTO {
     rank: number
     /** On-chain contract address (Robinhood Chain). */
     tokenAddress: string
+    totalSupply: number
     marketCapUsd: number
     liquidityUsd: number
     volume24hUsd: number

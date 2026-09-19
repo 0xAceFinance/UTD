@@ -28,6 +28,7 @@ import { POST as expireDuelRoute } from '@/app/api/duels/[id]/expire/route';
 import { POST as confirmSettlementRoute } from '@/app/api/duels/[id]/confirm-settlement/route';
 import { POST as refundStaleRoute } from '@/app/api/duels/[id]/refund-stale/route';
 import Duel from '@/lib/models/Duel';
+import DuelToken from '@/lib/models/DuelToken';
 import OracleHealthSample from '@/lib/models/OracleHealthSample';
 import CombatRecord from '@/lib/models/CombatRecord';
 import { ensureDbConnected, clearDatabase } from '../helpers/db';
@@ -65,13 +66,27 @@ async function setupTop10() {
   return { tokenA, tokenB };
 }
 
-function mockCreatedEvent(overrides: Partial<{ creatorSide: 0 | 1; durationSeconds: bigint; buyIn: bigint; escrowAddress: string }> = {}) {
+function mockCreatedEvent(
+  overrides: Partial<{
+    creatorSide: 0 | 1;
+    durationSeconds: bigint;
+    buyIn: bigint;
+    escrowAddress: string;
+    tokenASymbol: string;
+    tokenBSymbol: string;
+  }> = {}
+) {
   chainVerifyMocks.verifyDuelCreated.mockResolvedValue({
     escrowAddress: overrides.escrowAddress ?? ESCROW,
     event: {
       buyIn: overrides.buyIn ?? 100_000_000_000_000_000_000n, // 100e18
       creatorSide: overrides.creatorSide ?? 0,
       durationSeconds: overrides.durationSeconds ?? 1_200n, // 20 minutes -- within matchmaking's 15-40min bounds
+      // Matches setupTop10()'s fixed 'FOO'/'BAR' symbols, which every caller
+      // in this file uses -- POST /api/duels now requires these to equal the
+      // request body's tokenASymbol/tokenBSymbol (see app/api/duels/route.ts).
+      tokenASymbol: overrides.tokenASymbol ?? 'FOO',
+      tokenBSymbol: overrides.tokenBSymbol ?? 'BAR',
     },
   });
 }
@@ -166,6 +181,80 @@ describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {
     const winnerWallet = settled.winnerSide === 0 ? CREATOR : OPPONENT;
     const record = await CombatRecord.findOne({ wallet: winnerWallet.toLowerCase() });
     expect(record?.wins).toBe(1);
+  });
+
+  it('registration falls back to the client-supplied token snapshot when a token has rotated out of today\'s Top 10 between tx submission and registration', async () => {
+    const { tokenA, tokenB } = await setupTop10();
+    mockCreatedEvent();
+    getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
+
+    // Simulate a scan (POST /api/scan) wiping today's Top 10 in the gap
+    // between the wallet's createDuel() tx confirming on-chain and this
+    // registration call landing -- the exact race from the "New duels are
+    // paused..." bug report. The on-chain funds are already locked by now
+    // (mockCreatedEvent's escrow); registration must still succeed.
+    await DuelToken.deleteMany({});
+
+    const res = await createDuelRoute(
+      postJson('http://localhost/api/duels', {
+        creatorWallet: CREATOR,
+        tokenASymbol: tokenA.symbol,
+        tokenBSymbol: tokenB.symbol,
+        tokenASnapshot: {
+          symbol: tokenA.symbol,
+          name: tokenA.name,
+          tokenAddress: tokenA.tokenAddress,
+          totalSupply: tokenA.totalSupply,
+          marketCapUsd: tokenA.marketCapUsd,
+        },
+        tokenBSnapshot: {
+          symbol: tokenB.symbol,
+          name: tokenB.name,
+          tokenAddress: tokenB.tokenAddress,
+          totalSupply: tokenB.totalSupply,
+          marketCapUsd: tokenB.marketCapUsd,
+        },
+        txHash: '0x' + 'aa'.repeat(32),
+      })
+    );
+    const json = await body(res);
+    expect(res.status).toBe(201);
+    expect(json.data.tokenA.symbol).toBe(tokenA.symbol);
+    expect(json.data.tokenA.startMarketCapUsd).toBe(tokenA.marketCapUsd);
+    expect(json.data.tokenB.symbol).toBe(tokenB.symbol);
+  });
+
+  it('registration fails if a token is gone from today\'s Top 10 AND no snapshot is supplied', async () => {
+    const { tokenA, tokenB } = await setupTop10();
+    mockCreatedEvent();
+    await DuelToken.deleteMany({});
+
+    const res = await createDuelRoute(
+      postJson('http://localhost/api/duels', {
+        creatorWallet: CREATOR,
+        tokenASymbol: tokenA.symbol,
+        tokenBSymbol: tokenB.symbol,
+        txHash: '0x' + 'aa'.repeat(32),
+      })
+    );
+    expect(res.status).toBe(400);
+    expect((await body(res)).error).toMatch(/Top 10/);
+  });
+
+  it('rejects registration when the claimed token pair does not match the on-chain DuelCreated event', async () => {
+    const { tokenA, tokenB } = await setupTop10();
+    mockCreatedEvent({ tokenASymbol: 'SOMETHING_ELSE' });
+
+    const res = await createDuelRoute(
+      postJson('http://localhost/api/duels', {
+        creatorWallet: CREATOR,
+        tokenASymbol: tokenA.symbol,
+        tokenBSymbol: tokenB.symbol,
+        txHash: '0x' + 'aa'.repeat(32),
+      })
+    );
+    expect(res.status).toBe(400);
+    expect((await body(res)).error).toMatch(/does not match/);
   });
 
   it('cancel before join: creator can cancel an OPEN duel, and the cancellation is recorded for the rate limiter', async () => {
