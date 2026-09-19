@@ -109,7 +109,7 @@ contract BattleEscrowTest is Test {
 
     function test_expiresAndRefundsAfterOpenWindow_permissionlessly() public {
         address duel = _createDuel();
-        vm.warp(block.timestamp + 61 minutes);
+        vm.warp(block.timestamp + BattleEscrow(duel).MAX_OPEN_WINDOW() + 1);
 
         // Anyone can trigger expiry, not just the creator.
         vm.prank(rando);
@@ -187,13 +187,19 @@ contract BattleEscrowTest is Test {
     }
 
     function test_durationOutOfRangeReverts() public {
-        vm.prank(creator);
-        vm.expectRevert("duration out of range");
-        factory.createDuel(address(stakeToken), BUY_IN, 0, 5 minutes, "A", "B");
+        // Computed before expectRevert -- expectRevert applies to the very
+        // next call, and factory.MIN_DURATION()/MAX_DURATION() are external
+        // staticcalls that would otherwise consume it themselves.
+        uint256 tooShort = factory.MIN_DURATION() - 1;
+        uint256 tooLong = factory.MAX_DURATION() + 1;
 
         vm.prank(creator);
         vm.expectRevert("duration out of range");
-        factory.createDuel(address(stakeToken), BUY_IN, 0, 41 minutes, "A", "B");
+        factory.createDuel(address(stakeToken), BUY_IN, 0, tooShort, "A", "B");
+
+        vm.prank(creator);
+        vm.expectRevert("duration out of range");
+        factory.createDuel(address(stakeToken), BUY_IN, 0, tooLong, "A", "B");
     }
 
     function test_onlyOwnerCanUpdateOracleSignerOrTreasury() public {

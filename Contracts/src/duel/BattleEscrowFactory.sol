@@ -39,8 +39,8 @@ contract BattleEscrowFactory is Ownable, Pausable {
     using SafeERC20 for IERC20;
     using Clones for address;
 
-    uint256 public constant MIN_DURATION = 15 minutes;
-    uint256 public constant MAX_DURATION = 40 minutes;
+    uint256 public constant MIN_DURATION = 5 minutes;
+    uint256 public constant MAX_DURATION = 20 minutes;
     uint256 public constant ORACLE_SIGNER_TIMELOCK_DELAY = 24 hours;
 
     address public immutable escrowImplementation;

@@ -1,7 +1,7 @@
 export const LOBBY_CONFIG = {
-  maxOpenWindowSeconds: 60 * 60, // Section 02: unmatched lobbies auto-expire after 60 min
-  minDurationSeconds: 15 * 60,
-  maxDurationSeconds: 40 * 60,
+  maxOpenWindowSeconds: 5 * 60, // Section 02: unmatched lobbies auto-expire after 5 min
+  minDurationSeconds: 5 * 60,
+  maxDurationSeconds: 20 * 60,
 };
 
 export const CANCELLATION_CONFIG = {

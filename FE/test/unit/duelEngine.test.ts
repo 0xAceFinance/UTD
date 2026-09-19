@@ -12,7 +12,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 const { getLivePoolSamples } = vi.hoisted(() => ({ getLivePoolSamples: vi.fn() }));
 vi.mock('@/lib/dexScreenerSource', () => ({ getLivePoolSamples }));
 
-import { simulateTick, maybeSettle, finalizeSettlement } from '@/lib/duelEngine';
+import { simulateTick, maybeSettle, finalizeSettlement, retrySettlementSigning } from '@/lib/duelEngine';
 import WalletSighting from '@/lib/models/WalletSighting';
 import CombatRecord from '@/lib/models/CombatRecord';
 import Duel, { type IDuel } from '@/lib/models/Duel';
@@ -324,6 +324,64 @@ describe('lib/duelEngine::maybeSettle winner determination', () => {
 
     const settled = await Duel.findById(saved._id);
     expect(settled!.status).toBe('SETTLED');
+  });
+});
+
+describe('lib/duelEngine::retrySettlementSigning', () => {
+  it('repairs a duel stranded at SETTLING with no signature: signs it and persists winnerSide + oracleSignature', async () => {
+    const duel = await createDuel({
+      status: 'SETTLING',
+      escrowAddress: '0x1000000000000000000000000000000000000005',
+      tokenA: { startMarketCapUsd: 1_000_000, sustainedPeakMarketCapUsd: 1_000_000 },
+      tokenB: { startMarketCapUsd: 1_000_000, sustainedPeakMarketCapUsd: 1_500_000 },
+    });
+    expect(duel.oracleSignature).toBeUndefined();
+    expect(duel.winnerSide).toBeUndefined();
+
+    await retrySettlementSigning(duel);
+
+    expect(duel.status).toBe('SETTLING');
+    expect(duel.winnerSide).toBe(1); // token B's stored peak already shows the bigger gain
+    expect(duel.oracleSignature).toBeTruthy();
+
+    const expectedSigner = privateKeyToAccount(process.env.ORACLE_SIGNER_PRIVATE_KEY as `0x${string}`).address;
+    const message = keccak256(
+      encodePacked(['address', 'uint8', 'uint256'], [duel.escrowAddress as `0x${string}`, 1, BigInt(CONTRACTS.chainId)])
+    );
+    const digest = hashMessage({ raw: message });
+    const recovered = await recoverAddress({ hash: digest, signature: duel.oracleSignature as `0x${string}` });
+    expect(recovered.toLowerCase()).toBe(expectedSigner.toLowerCase());
+
+    // Persisted, not just held in memory on the passed-in doc.
+    const reloaded = await Duel.findById(duel._id);
+    expect(reloaded!.oracleSignature).toBe(duel.oracleSignature);
+    expect(reloaded!.winnerSide).toBe(1);
+  });
+
+  it('is a no-op for a duel that already has a signature', async () => {
+    const duel = await createDuel({
+      status: 'SETTLING',
+      escrowAddress: '0x1000000000000000000000000000000000000006',
+    });
+    duel.winnerSide = 0;
+    duel.oracleSignature = '0xalready-signed';
+    await duel.save();
+
+    await retrySettlementSigning(duel);
+
+    expect(duel.oracleSignature).toBe('0xalready-signed');
+  });
+
+  it('is a no-op for a duel not at SETTLING', async () => {
+    const duel = await createDuel({ status: 'LIVE', escrowAddress: '0x1000000000000000000000000000000000000007' });
+    await retrySettlementSigning(duel);
+    expect(duel.oracleSignature).toBeUndefined();
+  });
+
+  it('is a no-op for an off-chain duel (no escrowAddress) -- nothing to sign for', async () => {
+    const duel = await createDuel({ status: 'SETTLING' });
+    await retrySettlementSigning(duel);
+    expect(duel.oracleSignature).toBeUndefined();
   });
 });
 

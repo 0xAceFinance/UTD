@@ -34,7 +34,7 @@ contract BattleEscrow is ReentrancyGuard {
         Refunded
     }
 
-    uint256 public constant MAX_OPEN_WINDOW = 60 minutes;
+    uint256 public constant MAX_OPEN_WINDOW = 5 minutes;
 
     /// @dev How long past endTime an Active duel must sit unsettled before
     /// refundStale() becomes callable — see refundStale() below. refundStale()

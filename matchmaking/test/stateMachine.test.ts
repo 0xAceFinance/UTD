@@ -189,9 +189,9 @@ describe("lobby state machine — invalid transitions are rejected, not silently
     expect(() => cancel(lobby, "0xCreator")).toThrow(InvalidTransitionError);
   });
 
-  it("rejects a duration outside the 15-40 minute window", () => {
-    expect(() => baseLobby({ durationSeconds: 5 * 60 })).toThrow("between 15 and 40 minutes");
-    expect(() => baseLobby({ durationSeconds: 45 * 60 })).toThrow("between 15 and 40 minutes");
+  it("rejects a duration outside the 5-20 minute window", () => {
+    expect(() => baseLobby({ durationSeconds: 4 * 60 })).toThrow("between 5 and 20 minutes");
+    expect(() => baseLobby({ durationSeconds: 25 * 60 })).toThrow("between 5 and 20 minutes");
   });
 
   it("refuses to let the creator join their own lobby", () => {
@@ -209,13 +209,13 @@ describe("lobby state machine — invalid transitions are rejected, not silently
 
 describe("lobby state machine — boundary conditions on timestamps and durations", () => {
   it("accepts the exact minimum and maximum durations", () => {
-    expect(() => baseLobby({ durationSeconds: 15 * 60 })).not.toThrow();
-    expect(() => baseLobby({ durationSeconds: 40 * 60 })).not.toThrow();
+    expect(() => baseLobby({ durationSeconds: 5 * 60 })).not.toThrow();
+    expect(() => baseLobby({ durationSeconds: 20 * 60 })).not.toThrow();
   });
 
   it("rejects a duration one second outside either bound", () => {
-    expect(() => baseLobby({ durationSeconds: 15 * 60 - 1 })).toThrow("between 15 and 40 minutes");
-    expect(() => baseLobby({ durationSeconds: 40 * 60 + 1 })).toThrow("between 15 and 40 minutes");
+    expect(() => baseLobby({ durationSeconds: 5 * 60 - 1 })).toThrow("between 5 and 20 minutes");
+    expect(() => baseLobby({ durationSeconds: 20 * 60 + 1 })).toThrow("between 5 and 20 minutes");
   });
 
   it("allows joining exactly at the open deadline (inclusive boundary)", () => {
@@ -230,8 +230,8 @@ describe("lobby state machine — boundary conditions on timestamps and duration
 
   it("fuzzes duration bounds across the boundary: throws iff outside [min, max] inclusive", () => {
     const rng = mulberry32(42);
-    const min = 15 * 60;
-    const max = 40 * 60;
+    const min = 5 * 60;
+    const max = 20 * 60;
     for (let i = 0; i < 300; i++) {
       const d = Math.floor(rng() * (max - min + 200)) + (min - 100);
       const shouldThrow = d < min || d > max;

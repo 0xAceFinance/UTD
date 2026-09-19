@@ -116,6 +116,27 @@ describe('GET /api/cron/settle: keeper', () => {
     expect(json.relayed).toEqual({ paused: 1 });
   });
 
+  it('repairs a duel stranded at SETTLING with no signature, then relays it the same run', async () => {
+    const duel = await createDuel({
+      status: 'SETTLING',
+      opponentWallet: '0xcronopp00000000000000000000000000000009',
+      escrowAddress: '0x1000000000000000000000000000000000000058',
+      endTime: new Date(Date.now() - 3_600_000),
+      tokenA: makeTokenSide({ startMarketCapUsd: 1_000_000, sustainedPeakMarketCapUsd: 1_000_000 }),
+      tokenB: makeTokenSide({ startMarketCapUsd: 1_000_000, sustainedPeakMarketCapUsd: 1_300_000 }),
+    });
+    expect(duel.oracleSignature).toBeUndefined();
+
+    const json = (await body(await cronRoute(getReq(URL, auth)))).data;
+    expect(json.repaired).toBe(1);
+    // Repaired and relayed in the same pass, not left for the next minute.
+    expect(json.relayed).toEqual({ settled: 1 });
+
+    const reloaded = await Duel.findById(duel._id);
+    expect(reloaded?.oracleSignature).toBeTruthy();
+    expect(reloaded?.winnerSide).toBe(1);
+  });
+
   it('flags HELD duels still unresolved more than 12h after endTime', async () => {
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const overdue = await createDuel({ status: 'HELD', endTime: new Date(Date.now() - 13 * 3600_000) });

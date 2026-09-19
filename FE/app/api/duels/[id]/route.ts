@@ -2,7 +2,7 @@ import { Types } from 'mongoose';
 import { expire } from '@mcapduel/matchmaking';
 import { connectToDatabase } from '@/lib/mongoose';
 import Duel from '@/lib/models/Duel';
-import { simulateTick, maybeSettle } from '@/lib/duelEngine';
+import { simulateTick, maybeSettle, retrySettlementSigning } from '@/lib/duelEngine';
 import { toLobbySnapshot, applyLobby } from '@/lib/lobbyAdapter';
 import { success, failure } from '@/utils/response';
 
@@ -33,6 +33,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
             await simulateTick(duel);
             await duel.save();
             await maybeSettle(duel);
+        } else if (duel.status === 'SETTLING' && !duel.oracleSignature) {
+            // Repairs a duel that got stranded here before it ever got a
+            // signature -- see retrySettlementSigning's doc comment.
+            await retrySettlementSigning(duel);
         }
 
         return success(duel);
