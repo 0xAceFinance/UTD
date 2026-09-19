@@ -14,7 +14,24 @@ try {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: false,
+  // Only set for the GCP/Docker build (see Dockerfile) -- Vercel packages the
+  // app its own way and doesn't need this output mode.
+  ...(process.env.DOCKER_BUILD === 'true' ? { output: 'standalone' } : {}),
   transpilePackages: ['@mcapduel/engine', '@mcapduel/matchmaking', '@mcapduel/points', '@mcapduel/risk'],
+  async rewrites() {
+    // Set only on Vercel. Proxies every /api/* call to the GCP-hosted
+    // backend so frontend code keeps calling relative "/api/..." paths
+    // unchanged -- Vercel serves pages, GCP Cloud Run serves the API.
+    // Unset in local dev and in the GCP deployment itself, where this app's
+    // own /api routes should serve directly.
+    if (!process.env.BACKEND_API_URL) return []
+    return [
+      {
+        source: '/api/:path*',
+        destination: `${process.env.BACKEND_API_URL}/api/:path*`,
+      },
+    ]
+  },
   eslint: {
     // No ESLint config exists in this project yet (no .eslintrc/eslint.config.*,
     // eslint isn't even a dependency) -- setting one up is a separate decision

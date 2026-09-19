@@ -13,5 +13,8 @@ docs/
 # Dotenv file
 .env
 
+# Generated deployer/signer secrets
+.secrets/
+
 # OS files
 .DS_Store
