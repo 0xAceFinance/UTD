@@ -23,15 +23,17 @@ Two tokens using the "USDC" ticker on this chain are fakes, never use them:
 `0x0453dCF836Dc35DA9F8523ea2BB928268f16F073` ("Upsidedowncat"),
 `0x7eCca74AB958900EBBeD1b258cAb50Ae69409550` ("FatCatBatRatWifHat").
 
-### Duel contracts: CURRENT deployment (DeployDuel.s.sol, deployer nonces 8-9)
-Durations exactly 5, 10, 15 or 20 min (MIN_DURATION 300, MAX_DURATION 1200, DURATION_STEP 300).
+### Duel contracts: CURRENT deployment (DeployDuel.s.sol, deployer nonces 10-11)
+Durations exactly 5, 10, 15 or 20 min (MIN_DURATION 300, MAX_DURATION 1200, DURATION_STEP 300);
+open window 5 min (BattleEscrow.MAX_OPEN_WINDOW 300).
 | Contract | Address | Tx | Block |
 |---|---|---|---|
-| BattleEscrow (implementation) | `0x3F0F175EDBFb9688dC77ee0c6474030147784bCC` | `0xb6e72fd31262cb9f2891f9d61ca20896d2abcbca8b537cf811851868da5f8c4c` | 67283755 |
-| BattleEscrowFactory | `0xf56eED09448fE1C23009DA6D0f00DE1A927A862f` | `0x4cba9dc16e038b7781229727e5596718815012bbbbd61ac3f7c11eed72d28497` | 67283788 |
+| BattleEscrow (implementation) | `0x42839837874979e50f019c5C23154578216fa72D` | `0xe2cdc7a709af4fd9975a907ff8586a36274c9685f586eefe9aa850f7d72956b1` | 67296825 |
+| BattleEscrowFactory | `0x65f58fA80dd62460980B14979f062F1E67D35Cff` | `0x45590d9bd416ca82a6b0ce8663ebef8ad1c945819795e3556e07b295037b5a37` | 67296858 |
 
-SUPERSEDED (15-40 min rule, 0 duels, do not use): factory `0x32aB0586A99e7b7246225689dD6847a77E1d946D`,
-implementation `0x0400babC9C034bba510DDe52EB829F87739C5e41` (nonces 6-7, blocks 67027457-67027489).
+SUPERSEDED (0 duels each, do not use):
+- 1st: factory `0x32aB0586A99e7b7246225689dD6847a77E1d946D`, impl `0x0400babC9C034bba510DDe52EB829F87739C5e41` (15-40 min durations)
+- 2nd: factory `0xf56eED09448fE1C23009DA6D0f00DE1A927A862f`, impl `0x3F0F175EDBFb9688dC77ee0c6474030147784bCC` (60 min open window)
 
 Verified on-chain after deploy: oracleSigner, platformTreasury, approvedStakeToken (USDG),
 minBuyIn=1000000 all as configured; owner = deployer; paused=false; implementation's
@@ -45,7 +47,7 @@ FE env:
 ```
 NEXT_PUBLIC_CHAIN_ID=4663
 NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com
-NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0xf56eED09448fE1C23009DA6D0f00DE1A927A862f
+NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0x65f58fA80dd62460980B14979f062F1E67D35Cff
 NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168
 ```
 
