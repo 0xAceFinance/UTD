@@ -154,6 +154,30 @@ gcloud scheduler jobs create http utd-settle-cron \
   --location=<your-region>
 ```
 
+The discovery scan (`POST /api/scan`) needs the same treatment. It's what
+populates `OracleHealthSample`, which `lib/duelGuards.ts::checkCanCreateLobby`
+reads before allowing any new duel -- if it hasn't run successfully in the
+last hour (`riskConfig.ts::ORACLE_CIRCUIT_BREAKER_CONFIG.maxStalenessSeconds`),
+or has 3+ consecutive failures, every new duel gets blocked with "New duels
+are paused while we recover the price feed." An empty table (never having
+run) fails the same way -- `shouldPauseNewLobbies` fails safe and pauses.
+15-minute cadence keeps comfortable margin inside that 1-hour staleness
+window even if a run or two fails or is delayed:
+
+```bash
+gcloud scheduler jobs create http utd-scan-cron \
+  --schedule="*/15 * * * *" \
+  --uri="<cloud-run-service-url>/api/scan" \
+  --http-method=POST \
+  --location=<your-region>
+```
+
+Unlike `/api/cron/settle`, `POST /api/scan` currently has **no auth check**
+(`app/api/scan/route.ts`) -- anyone with the Cloud Run URL can trigger it.
+Low severity (it only re-runs discovery and rewrites today's Top 10, no
+funds at risk), but worth gating with `isAuthorizedCron` the same way if this
+surface grows.
+
 ## Verification checklist
 
 Run through these once both sides are live, before trusting it with real
@@ -177,6 +201,10 @@ duels:
       Run, not just on the original Vercel request.
 - [ ] Cloud Scheduler's job history shows successful (`200`) invocations
       once a minute.
+- [ ] `curl -i -X POST https://<cloud-run-url>/api/scan` → `200`, and
+      `curl "https://<cloud-run-url>/api/duels/precheck?wallet=0x..."` →
+      `{"canCreate":true}` (confirms the scan cron will keep the oracle
+      circuit breaker from tripping).
 
 ## Troubleshooting
 

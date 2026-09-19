@@ -33,10 +33,31 @@ export async function GET(req: NextRequest) {
     }
 }
 
+/** Bare-minimum shape check for a client-supplied token snapshot (see below) --
+ * not a trust boundary, just enough to stop obviously-malformed data from
+ * reaching the database. */
+function isValidSnapshot(s: unknown): s is {
+    symbol: string;
+    name: string;
+    tokenAddress: string;
+    totalSupply: number;
+    marketCapUsd: number;
+} {
+    if (!s || typeof s !== 'object') return false;
+    const t = s as Record<string, unknown>;
+    return (
+        typeof t.symbol === 'string' &&
+        typeof t.name === 'string' &&
+        typeof t.tokenAddress === 'string' &&
+        typeof t.totalSupply === 'number' &&
+        typeof t.marketCapUsd === 'number'
+    );
+}
+
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { creatorWallet, tokenASymbol, tokenBSymbol, txHash } = body;
+        const { creatorWallet, tokenASymbol, tokenBSymbol, tokenASnapshot, tokenBSnapshot, txHash } = body;
 
         if (!creatorWallet || !tokenASymbol || !tokenBSymbol || !txHash) {
             return failure('creatorWallet, tokenASymbol, tokenBSymbol, and txHash are all required', 400);
@@ -53,26 +74,40 @@ export async function POST(req: NextRequest) {
         const blockedReason = await checkCanCreateLobby(req, creatorWallet);
         if (blockedReason) return failure(blockedReason, 403);
 
-        const [tokenA, tokenB] = await Promise.all([
-            DuelToken.findOne({ symbol: tokenASymbol }),
-            DuelToken.findOne({ symbol: tokenBSymbol }),
-        ]);
-        if (!tokenA || !tokenB) {
-            return failure('both tokens must be from today\'s Top 10', 400);
-        }
-
         // The wallet already signed and paid gas for this on-chain transaction
         // before calling us -- never trust the client's claim of what it did;
         // decode the real DuelCreated event from the real receipt instead.
+        // tokenASymbol/tokenBSymbol on the event are ground truth: the escrow
+        // clone already exists on-chain holding real funds against exactly
+        // these strings, regardless of what today's Top 10 list says by now.
         const created = await verifyDuelCreated(txHash, creatorWallet);
         const receiptEvent = created.event;
         const escrowAddress = created.escrowAddress;
+        if (receiptEvent.tokenASymbol !== tokenASymbol || receiptEvent.tokenBSymbol !== tokenBSymbol) {
+            return failure('Token pair does not match the on-chain transaction.', 400);
+        }
         const buyInUsd = Number(formatUnits(receiptEvent.buyIn, await readStakeTokenDecimals()));
         const creatorSide = receiptEvent.creatorSide as 0 | 1;
         const durationSeconds = Number(receiptEvent.durationSeconds);
 
         const existing = await Duel.findOne({ escrowAddress });
         if (existing) return success(existing, 201);
+
+        // Prefer the live Top 10 doc (freshest price data). Fall back to the
+        // snapshot the frontend captured at the moment the user submitted --
+        // funds are already locked on-chain by now, so a scan rotating this
+        // symbol out of today's Top 10 in between must not block registration
+        // (see app/(app)/duels/create/page.tsx for where the snapshot is taken,
+        // and lib/duelGuards.ts for the "why" on this whole flow).
+        const [liveTokenA, liveTokenB] = await Promise.all([
+            DuelToken.findOne({ symbol: tokenASymbol }),
+            DuelToken.findOne({ symbol: tokenBSymbol }),
+        ]);
+        const tokenA = liveTokenA ?? (isValidSnapshot(tokenASnapshot) ? tokenASnapshot : null);
+        const tokenB = liveTokenB ?? (isValidSnapshot(tokenBSnapshot) ? tokenBSnapshot : null);
+        if (!tokenA || !tokenB) {
+            return failure('both tokens must be from today\'s Top 10', 400);
+        }
 
         // Reuses the tested matchmaking state machine purely to validate the
         // duration bounds (already enforced on-chain too) and compute the

@@ -31,7 +31,13 @@ export async function verifyDuelCreated(
     expectedCreator: string
 ): Promise<{
     escrowAddress: `0x${string}`;
-    event: { buyIn: bigint; creatorSide: number; durationSeconds: bigint };
+    event: {
+        buyIn: bigint;
+        creatorSide: number;
+        durationSeconds: bigint;
+        tokenASymbol: string;
+        tokenBSymbol: string;
+    };
 }> {
     const receipt = await getSuccessfulReceipt(txHash);
     const events = parseEventLogs({ abi: BattleEscrowFactoryAbi, logs: receipt.logs, eventName: 'DuelCreated' });
@@ -48,7 +54,13 @@ export async function verifyDuelCreated(
     const args = (event as any).args;
     return {
         escrowAddress: args.duel,
-        event: { buyIn: args.buyIn, creatorSide: Number(args.creatorSide), durationSeconds: args.durationSeconds },
+        event: {
+            buyIn: args.buyIn,
+            creatorSide: Number(args.creatorSide),
+            durationSeconds: args.durationSeconds,
+            tokenASymbol: args.tokenASymbol,
+            tokenBSymbol: args.tokenBSymbol,
+        },
     };
 }
 
