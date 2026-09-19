@@ -62,7 +62,7 @@ contract BattleEscrowAdversarialTest is Test {
 
         implementation = new BattleEscrow();
         stakeToken = new MockERC20();
-        factory = new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, address(stakeToken));
+        factory = new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, address(stakeToken), 1);
 
         stakeToken.mint(creator, 1_000_000e18);
         stakeToken.mint(opponent, 1_000_000e18);
@@ -251,24 +251,36 @@ contract BattleEscrowAdversarialTest is Test {
         assertEq(uint256(BattleEscrow(duelA).status()), uint256(BattleEscrow.Status.Settled));
     }
 
-    function test_settleRejectsSignatureFromAFormerOracleSignerAfterRotation() public {
+    function test_signerRotationDoesNotInvalidateAnInFlightDuelsSignature() public {
+        // Each escrow snapshots the signer at activate(), so a rotation can't
+        // kill a result already signed for a duel that was in flight (which
+        // would hand the loser refundStale()), and the rotated-in key can't
+        // decide that duel either.
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + 1);
+        bytes memory sigFromOriginalSigner = _signSettlement(duel, 0);
+
+        uint256 newSignerKey = 0xB0B5;
+        _rotateOracleSigner(vm.addr(newSignerKey));
+
+        vm.expectRevert("invalid oracle signature");
+        BattleEscrow(duel).settle(0, _sign(newSignerKey, duel, 1));
+
+        BattleEscrow(duel).settle(0, sigFromOriginalSigner);
+        assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Settled));
+    }
+
+    function test_signerRotationAppliesToDuelsActivatedAfterIt() public {
+        uint256 newSignerKey = 0xB0B5;
+        _rotateOracleSigner(vm.addr(newSignerKey));
+
         address duel = _createAndActivateDuel();
         vm.warp(block.timestamp + DURATION + 1);
 
-        // Sign with the original (soon to be former) signer.
-        bytes memory staleSig = _signSettlement(duel, 0);
-
-        // Rotate the oracle signer.
-        uint256 newSignerKey = 0xB0B5;
-        address newSigner = vm.addr(newSignerKey);
-        _rotateOracleSigner(newSigner);
-
         vm.expectRevert("invalid oracle signature");
-        BattleEscrow(duel).settle(0, staleSig);
+        BattleEscrow(duel).settle(0, _signSettlement(duel, 0)); // former signer
 
-        // A fresh signature from the new signer works fine.
-        bytes memory freshSig = _sign(newSignerKey, duel, 0);
-        BattleEscrow(duel).settle(0, freshSig);
+        BattleEscrow(duel).settle(0, _sign(newSignerKey, duel, 0));
         assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Settled));
     }
 
@@ -674,15 +686,14 @@ contract BattleEscrowAdversarialTest is Test {
         assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Refunded));
     }
 
-    function test_voidActiveRejectsSignatureFromAFormerOracleSignerAfterRotation() public {
+    function test_voidActiveStillAcceptsTheSignerSnapshottedAtActivateAfterRotation() public {
         address duel = _createAndActivateDuel();
-        bytes memory staleSig = _signVoid(duel);
+        bytes memory sigFromOriginalSigner = _signVoid(duel);
 
-        uint256 newSignerKey = 0xB0B0;
-        _rotateOracleSigner(vm.addr(newSignerKey));
+        _rotateOracleSigner(vm.addr(0xB0B0));
 
-        vm.expectRevert("invalid oracle signature");
-        BattleEscrow(duel).voidActive(staleSig);
+        BattleEscrow(duel).voidActive(sigFromOriginalSigner);
+        assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Refunded));
     }
 
     function test_voidActiveSignatureCannotBeReplayedAgainstADifferentDuelClone() public {

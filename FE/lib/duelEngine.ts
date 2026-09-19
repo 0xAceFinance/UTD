@@ -1,14 +1,16 @@
 import { computeMatchPoints, isPointsEligible } from '@mcapduel/points';
 import { priceSample, liquidityWeightedMedianPrice, runOraclePipeline } from '@mcapduel/engine';
-import { closeBattleWindow, flagForReview, settle } from '@mcapduel/matchmaking';
+import { closeBattleWindow, flagForReview, settle, refundStale } from '@mcapduel/matchmaking';
+import { after } from 'next/server';
 import { WalletClusterGraph, isSuspectedSybilMatch } from '@mcapduel/risk';
 import { getLivePoolSamples } from '@/lib/dexScreenerSource';
 import { signSettlement } from '@/lib/oracleSigner';
+import { submitSettlement } from '@/lib/settlementRelayer';
 import { toLobbySnapshot, applyLobby } from '@/lib/lobbyAdapter';
 import CombatRecord from '@/lib/models/CombatRecord';
 import WalletSighting from '@/lib/models/WalletSighting';
 import Duel from '@/lib/models/Duel';
-import type { IDuel, TokenSide } from '@/lib/models/Duel';
+import type { IDuel, TokenSide, DeferredPayout } from '@/lib/models/Duel';
 
 /**
  * Minimum time between real pool fetches for one duel side. The live battle
@@ -157,6 +159,10 @@ export function computeWinnerSide(duel: IDuel): 0 | 1 {
  *  - for a legacy off-chain-only duel (created before on-chain integration
  *    existed): settles immediately in the database, same as before.
  *
+ * With `relay` (the default), a freshly-signed on-chain result is handed to
+ * lib/settlementRelayer.ts in the background; the cron passes false because
+ * it relays every SETTLING duel itself right after.
+ *
  * Mutates `duel` and persists it. Safe to call repeatedly -- and safe to call
  * concurrently for the same duel: the LIVE -> SETTLING claim below is an
  * atomic compare-and-swap, so at most one concurrent caller (multiple
@@ -165,7 +171,7 @@ export function computeWinnerSide(duel: IDuel): 0 | 1 {
  * concurrent callers could both pass the `duel.status !== 'LIVE'` check
  * above before either saved, and both go on to award points twice.
  */
-export async function maybeSettle(duel: IDuel): Promise<void> {
+export async function maybeSettle(duel: IDuel, { relay = true }: { relay?: boolean } = {}): Promise<void> {
   if (duel.status !== 'LIVE' || !duel.startTime || !duel.endTime) return;
   if (Date.now() < duel.endTime.getTime()) return;
 
@@ -194,12 +200,68 @@ export async function maybeSettle(duel: IDuel): Promise<void> {
     duel.winnerSide = winnerSide;
     duel.oracleSignature = await signSettlement(duel.escrowAddress as `0x${string}`, winnerSide);
     await duel.save();
+    if (relay) scheduleRelay(duel);
     return;
   }
 
   lobby = settle(lobby, winnerSide);
   applyLobby(duel, lobby);
   await finalizeSettlement(duel, winnerSide);
+}
+
+/**
+ * Pushes the freshly-signed result on-chain without making the caller wait
+ * for it, so the winner's payout doesn't depend on anyone clicking "Claim"
+ * before BattleEscrow.refundStale() opens at endTime + 24h (at which point
+ * the loser could refund their lost stake). next/server's after() is
+ * Vercel's waitUntil under the hood: the response goes out immediately and
+ * the function stays alive for the relay. Outside a request (a unit test, a
+ * script) there's no request scope to hang it on -- the cron
+ * (app/api/cron/settle) picks the duel up on its next run instead.
+ */
+function scheduleRelay(duel: IDuel): void {
+  try {
+    after(() => submitSettlement(duel));
+  } catch {
+    // no request scope -- left to the cron
+  }
+}
+
+/**
+ * The single place an on-chain settlement becomes SETTLED in the database,
+ * once the caller has established the real winnerSide from the chain (a
+ * verified Settled event, or a direct read of an already-Settled escrow).
+ * Used by app/api/duels/[id]/confirm-settlement and lib/settlementRelayer.ts.
+ * The SETTLING -> SETTLED claim is an atomic compare-and-swap, so a user's
+ * confirm call racing the relayer can't both reach finalizeSettlement and
+ * double-credit points. Returns false if someone else already finalized it.
+ */
+export async function confirmOnChainSettlement(
+  duel: IDuel,
+  winnerSide: 0 | 1,
+  deferredPayouts: DeferredPayout[] = []
+): Promise<boolean> {
+  const claimed = await Duel.findOneAndUpdate(
+    { _id: duel._id, status: 'SETTLING' },
+    { $set: { status: 'SETTLED', winnerSide, deferredPayouts } }
+  );
+  if (!claimed) return false;
+
+  applyLobby(duel, settle(toLobbySnapshot(duel), winnerSide));
+  duel.deferredPayouts = deferredPayouts;
+  await finalizeSettlement(duel, winnerSide);
+  return true;
+}
+
+/** DB-side consequence of the escrow already being Refunded on-chain (refundStale()
+ * landed first) -- no winner, no points. Same compare-and-swap. */
+export async function confirmOnChainRefund(duel: IDuel): Promise<boolean> {
+  if (duel.status !== 'LIVE' && duel.status !== 'SETTLING' && duel.status !== 'HELD') return false;
+  const claimed = await Duel.findOneAndUpdate(
+    { _id: duel._id, status: duel.status },
+    { $set: { status: refundStale(toLobbySnapshot(duel)).status } }
+  );
+  return Boolean(claimed);
 }
 
 /**

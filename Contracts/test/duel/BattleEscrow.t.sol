@@ -30,7 +30,7 @@ contract BattleEscrowTest is Test {
 
         implementation = new BattleEscrow();
         stakeToken = new MockERC20();
-        factory = new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, address(stakeToken));
+        factory = new BattleEscrowFactory(address(implementation), oracleSigner, platformTreasury, address(stakeToken), 1);
 
         stakeToken.mint(creator, 1_000e18);
         stakeToken.mint(opponent, 1_000e18);

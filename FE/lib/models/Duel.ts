@@ -45,6 +45,14 @@ export interface TokenSide {
     oracleVerified?: boolean;
 }
 
+/** A payout BattleEscrow couldn't push (e.g. a USDC-blacklisted recipient) and
+ * credited to owed[to] instead -- claimable via withdraw(). amount is the raw
+ * token amount as a decimal string (it can exceed Number precision). */
+export interface DeferredPayout {
+    to: string;
+    amount: string;
+}
+
 export interface IDuel extends Document {
     status: LobbyStatus;
     creatorWallet: string;
@@ -82,6 +90,12 @@ export interface IDuel extends Document {
      * on-chain settle() has been confirmed yet -- see
      * app/api/duels/[id]/confirm-settlement/route.ts. */
     oracleSignature?: string;
+    /** PayoutDeferred events from the settle() transaction, if any. */
+    deferredPayouts?: DeferredPayout[];
+    /** Short lease held by lib/settlementRelayer.ts while it has a settle()
+     * transaction in flight, so the cron and a page view can't both pay gas
+     * to submit the same settlement. */
+    relayLockedUntil?: Date;
 }
 
 const PoolSampleSchema = new Schema<StoredPoolSample>(
@@ -133,6 +147,11 @@ const DuelSchema = new Schema<IDuel>({
     flaggedSybil: { type: Boolean, default: false },
     escrowAddress: { type: String, index: true },
     oracleSignature: String,
+    deferredPayouts: {
+        type: [new Schema<DeferredPayout>({ to: { type: String, lowercase: true }, amount: String }, { _id: false })],
+        default: undefined,
+    },
+    relayLockedUntil: Date,
 });
 
 export default models.Duel || model<IDuel>('Duel', DuelSchema);

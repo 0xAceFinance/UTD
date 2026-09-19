@@ -5,4 +5,5 @@ pragma solidity ^0.8.17;
 interface IBattleEscrowFactory {
     function oracleSigner() external view returns (address);
     function platformTreasury() external view returns (address);
+    function paused() external view returns (bool);
 }

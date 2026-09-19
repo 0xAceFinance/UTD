@@ -63,7 +63,10 @@ contract CombatRecordNFT is ERC721, Ownable {
         if (tokenIdOf[wallet] == 0) {
             uint256 tokenId = nextTokenId++;
             tokenIdOf[wallet] = tokenId;
-            _safeMint(wallet, tokenId);
+            // Plain _mint, not _safeMint: the token is soulbound, so the ERC721
+            // receiver check buys nothing -- and it would permanently block points
+            // for any contract wallet without onERC721Received.
+            _mint(wallet, tokenId);
         }
         totalPoints[wallet] += amount;
         emit PointsAdded(wallet, amount, totalPoints[wallet]);

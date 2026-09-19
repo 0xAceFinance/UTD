@@ -1,3 +1,4 @@
+import { vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -33,3 +34,21 @@ process.env.NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS =
 
 // Test-only value for the internal admin routes' shared-secret gate (lib/adminAuth.ts).
 process.env.ADMIN_API_SECRET = process.env.ADMIN_API_SECRET ?? 'test-admin-secret';
+
+// No test talks to a real chain. lib/chainClient.ts's live reads get
+// defaults matching a healthy, unpaused deployment whose escrows were
+// activated under the current ORACLE_SIGNER_PRIVATE_KEY; a test that needs
+// something else overrides them with vi.mocked(...).mockResolvedValue(...).
+vi.mock('@/lib/chainClient', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/chainClient')>();
+  const { privateKeyToAccount } = await import('viem/accounts');
+  return {
+    ...actual,
+    publicClient: { simulateContract: vi.fn(), waitForTransactionReceipt: vi.fn() },
+    readEscrowStatus: vi.fn(async () => actual.EscrowStatus.Active),
+    readEscrowWinnerSide: vi.fn(),
+    readSettlementSigner: vi.fn(async () => privateKeyToAccount(process.env.ORACLE_SIGNER_PRIVATE_KEY as `0x${string}`).address),
+    readFactoryPaused: vi.fn(async () => false),
+    readStakeTokenDecimals: vi.fn(async () => 18),
+  };
+});

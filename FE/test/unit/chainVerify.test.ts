@@ -170,6 +170,32 @@ describe('lib/chainVerify', () => {
       expect(result.winnerSide).toBe(1);
     });
 
+    it('returns PayoutDeferred events from this escrow only (a blacklisted winner is credited to owed[])', async () => {
+      const settled = buildLog({
+        address: ADDR.escrow,
+        abi: BattleEscrowAbi,
+        eventName: 'Settled',
+        args: { winnerSide: 0, winner: ADDR.creator, winnerAmount: 160n, platformAmount: 40n },
+      });
+      const deferred = buildLog({
+        address: ADDR.escrow,
+        abi: BattleEscrowAbi,
+        eventName: 'PayoutDeferred',
+        args: { to: ADDR.creator, amount: 160n },
+      });
+      const foreign = buildLog({
+        address: ADDR.otherEscrow,
+        abi: BattleEscrowAbi,
+        eventName: 'PayoutDeferred',
+        args: { to: ADDR.opponent, amount: 999n },
+      });
+      getTransactionReceipt.mockResolvedValue(buildReceipt([settled, deferred, foreign]));
+
+      const { verifyDuelSettled } = await import('@/lib/chainVerify');
+      const result = await verifyDuelSettled(TX_HASH, ADDR.escrow);
+      expect(result.deferredPayouts).toEqual([{ to: ADDR.creator.toLowerCase(), amount: '160' }]);
+    });
+
     it('fails closed when the Settled event is emitted by a different escrow address', async () => {
       const log = buildLog({
         address: ADDR.otherEscrow,

@@ -46,6 +46,11 @@ contract RedemptionVault is Ownable, ReentrancyGuard {
     uint256 public constant MAX_VESTING = 90 days;
     uint256 public epochLengthSeconds = 1 days;
 
+    /// @dev Reward tokens promised by schedules but not yet claimed. redeem()
+    /// refuses to promise more than the vault holds, so points are never burned
+    /// for tokens that don't exist.
+    uint256 public totalCommitted;
+
     mapping(bytes32 => uint256) public tierCapPoints; // keccak256(tier name) -> points redeemable per epoch
     mapping(address => mapping(uint256 => uint256)) public redeemedInEpoch;
     mapping(address => VestingSchedule[]) public schedules;
@@ -79,6 +84,8 @@ contract RedemptionVault is Ownable, ReentrancyGuard {
 
         uint256 tokenAmount = pointsAmount * tokensPerPointWad;
         require(tokenAmount > 0, "rate too low: this would redeem for zero reward tokens");
+        require(rewardToken.balanceOf(address(this)) >= totalCommitted + tokenAmount, "rewards pool exhausted");
+        totalCommitted += tokenAmount;
 
         redeemedInEpoch[msg.sender][epoch] += pointsAmount;
         combatRecord.markRedeemed(msg.sender, pointsAmount);
@@ -107,6 +114,7 @@ contract RedemptionVault is Ownable, ReentrancyGuard {
             }
         }
         require(claimable > 0, "nothing vested to claim");
+        totalCommitted -= claimable;
         rewardToken.safeTransfer(msg.sender, claimable);
         emit Claimed(msg.sender, claimable);
     }

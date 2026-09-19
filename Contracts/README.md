@@ -277,6 +277,18 @@ DEPLOY_MOCK_STAKE_TOKEN=true \
 (Omit `DEPLOY_MOCK_STAKE_TOKEN` and set `STAKE_TOKEN_ADDRESS=<real stablecoin
 address>` instead for anything beyond local/testnet use.)
 
+For a real stablecoin, `MIN_BUY_IN` is required and must be at least one whole
+token in its own units (e.g. `1000000` = 1 USDC); the script reads the token's
+`decimals()` and refuses a dust floor. Optional:
+
+- `FACTORY_OWNER=<multisig>` hands factory ownership over after deployment. The
+  owner can `pause()` all duels and propose oracle signer rotations, so it should
+  not stay on the deployer's hot key.
+- `RELAYER_ADDRESS=<FE relayer wallet>` is only checked: the script refuses to
+  deploy if it equals the oracle signer (the relayer needs no on-chain role).
+
+The script ends by printing the `NEXT_PUBLIC_*` values to paste into the FE env.
+
 There is no `Deploy.s.sol`/`DeployDuel.s.sol` equivalent yet for
 `CombatRecordNFT`/`RedemptionVault` — deploy those manually (via `forge
 create` or a cast script) with their constructor arguments

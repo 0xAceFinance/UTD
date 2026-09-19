@@ -47,6 +47,24 @@ export interface DuelDTO {
     /** Oracle signature ready for anyone to submit as settle(winnerSide, oracleSignature)
      * on the escrow contract -- present once status is SETTLING. */
     oracleSignature?: string
+    /** PayoutDeferred events from the settle() tx: payouts the stake token refused
+     * (e.g. a blacklisted address), credited to owed[to] on the escrow instead. */
+    deferredPayouts?: { to: string; amount: string }[]
+}
+
+/** Mirrors BattleEscrow.STALE_REFUND_GRACE_PERIOD (Contracts/src/duel/BattleEscrow.sol). */
+export const STALE_REFUND_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Whether to offer the last-resort refundStale() button. Only for a duel with
+ * no result: LIVE (never signed) or HELD (flag never resolved). Never for
+ * SETTLING -- a winner is already signed there, and refundStale() would hand
+ * the loser back a stake they lost; the payout button is the only action.
+ * The real timing gate is on-chain; this is a UI estimate.
+ */
+export function canForceRefund(duel: Pick<DuelDTO, 'status' | 'endTime'>, nowMs = Date.now()): boolean {
+    if (duel.status !== 'LIVE' && duel.status !== 'HELD') return false
+    return !!duel.endTime && nowMs - new Date(duel.endTime).getTime() >= STALE_REFUND_GRACE_PERIOD_MS
 }
 
 export function formatUsd(n: number): string {

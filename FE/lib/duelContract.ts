@@ -1,6 +1,6 @@
 'use client';
 
-import { parseUnits } from 'viem';
+import { formatUnits, parseUnits } from 'viem';
 import { readContract, writeContract, waitForTransactionReceipt } from 'wagmi/actions';
 import { wagmiConfig } from '@/config/wagmiConfig';
 import { CONTRACTS, BattleEscrowFactoryAbi, BattleEscrowAbi, Erc20Abi } from '@/config/contracts';
@@ -24,12 +24,50 @@ import { CONTRACTS, BattleEscrowFactoryAbi, BattleEscrowAbi, Erc20Abi } from '@/
  * RPC instead of the local Anvil chain. Pinning chainId makes wagmi prompt a
  * network switch for writes and always read from the right RPC regardless of
  * the wallet's currently-selected network.
- *
- * stakeToken decimals: 18 (MockERC20 on the local Anvil deployment -- see
- * Contracts/script/DeployDuel.s.sol). A real stablecoin (e.g. USDC, 6
- * decimals) needs this adjusted at production deployment time.
  */
-const STAKE_TOKEN_DECIMALS = 18;
+
+let stakeTokenDecimals: Promise<number> | undefined;
+
+/** Read from the token once and cached: 18 on the local MockERC20, 6 on production USDC. */
+export function getStakeTokenDecimals(): Promise<number> {
+    stakeTokenDecimals ??= readContract(wagmiConfig, {
+        chainId: CONTRACTS.chainId,
+        address: CONTRACTS.stakeToken,
+        abi: Erc20Abi,
+        functionName: 'decimals',
+    })
+        .then(Number)
+        .catch((err) => {
+            stakeTokenDecimals = undefined;
+            throw err;
+        });
+    return stakeTokenDecimals;
+}
+
+/**
+ * Live factory gates the UI must respect before asking for a signature:
+ * createDuel()/joinDuel() revert while paused, and createDuel() reverts
+ * "bad buyIn" below minBuyIn. minBuyInUsd is minBuyIn in whole stake-token
+ * units (the stake token is a dollar stablecoin).
+ */
+export async function getFactoryState(): Promise<{ paused: boolean; minBuyInUsd: number }> {
+    const [paused, minBuyIn, decimals] = await Promise.all([
+        readContract(wagmiConfig, {
+            chainId: CONTRACTS.chainId,
+            address: CONTRACTS.battleEscrowFactory,
+            abi: BattleEscrowFactoryAbi,
+            functionName: 'paused',
+        }) as Promise<boolean>,
+        readContract(wagmiConfig, {
+            chainId: CONTRACTS.chainId,
+            address: CONTRACTS.battleEscrowFactory,
+            abi: BattleEscrowFactoryAbi,
+            functionName: 'minBuyIn',
+        }) as Promise<bigint>,
+        getStakeTokenDecimals(),
+    ]);
+    return { paused, minBuyInUsd: Number(formatUnits(minBuyIn, decimals)) };
+}
 
 async function ensureApproval(owner: `0x${string}`, amountWei: bigint): Promise<void> {
     const allowance = (await readContract(wagmiConfig, {
@@ -59,7 +97,11 @@ export async function createDuelOnChain(params: {
     tokenASymbol: string;
     tokenBSymbol: string;
 }): Promise<`0x${string}`> {
-    const amountWei = parseUnits(String(params.buyInUsd), STAKE_TOKEN_DECIMALS);
+    const { paused, minBuyInUsd } = await getFactoryState();
+    if (paused) throw new Error('Duels are paused right now. Try again later.');
+    if (params.buyInUsd < minBuyInUsd) throw new Error(`Minimum buy-in is $${minBuyInUsd}.`);
+
+    const amountWei = parseUnits(String(params.buyInUsd), await getStakeTokenDecimals());
     await ensureApproval(params.creator, amountWei);
 
     const hash = await writeContract(wagmiConfig, {
@@ -78,7 +120,9 @@ export async function joinDuelOnChain(
     escrowAddress: `0x${string}`,
     buyInUsd: number
 ): Promise<`0x${string}`> {
-    const amountWei = parseUnits(String(buyInUsd), STAKE_TOKEN_DECIMALS);
+    if ((await getFactoryState()).paused) throw new Error('Duels are paused right now. Try again later.');
+
+    const amountWei = parseUnits(String(buyInUsd), await getStakeTokenDecimals());
     await ensureApproval(opponent, amountWei);
 
     const hash = await writeContract(wagmiConfig, {
@@ -147,6 +191,30 @@ export async function refundStaleDuelOnChain(escrowAddress: `0x${string}`): Prom
         address: escrowAddress,
         abi: BattleEscrowAbi,
         functionName: 'refundStale',
+        args: [],
+    });
+    await waitForTransactionReceipt(wagmiConfig, { chainId: CONTRACTS.chainId, hash });
+    return hash;
+}
+
+/** A payout the escrow couldn't push to this wallet (PayoutDeferred) and is holding for withdraw(). */
+export async function readOwed(escrowAddress: `0x${string}`, wallet: `0x${string}`): Promise<bigint> {
+    return (await readContract(wagmiConfig, {
+        chainId: CONTRACTS.chainId,
+        address: escrowAddress,
+        abi: BattleEscrowAbi,
+        functionName: 'owed',
+        args: [wallet],
+    })) as bigint;
+}
+
+/** Pulls owed[msg.sender] -- only ever to the caller's own wallet. */
+export async function withdrawOwedOnChain(escrowAddress: `0x${string}`): Promise<`0x${string}`> {
+    const hash = await writeContract(wagmiConfig, {
+        chainId: CONTRACTS.chainId,
+        address: escrowAddress,
+        abi: BattleEscrowAbi,
+        functionName: 'withdraw',
         args: [],
     });
     await waitForTransactionReceipt(wagmiConfig, { chainId: CONTRACTS.chainId, hash });

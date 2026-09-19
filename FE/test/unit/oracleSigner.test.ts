@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { encodePacked, keccak256, recoverAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { hashMessage } from 'viem';
 import { signSettlement, signVoid } from '@/lib/oracleSigner';
 import { CONTRACTS } from '@/config/contracts';
+import { readSettlementSigner } from '@/lib/chainClient';
 
 const ESCROW_A = '0x1000000000000000000000000000000000000001' as `0x${string}`;
 const ESCROW_B = '0x1000000000000000000000000000000000000002' as `0x${string}`;
@@ -83,5 +84,44 @@ describe('lib/oracleSigner::signVoid', () => {
     } finally {
       process.env.ORACLE_SIGNER_PRIVATE_KEY = original;
     }
+  });
+});
+
+describe('lib/oracleSigner: key per escrow (signer rotation)', () => {
+  // Anvil's well-known test key #3, standing in for the pre-rotation oracle key.
+  const PREVIOUS_KEY = '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6' as `0x${string}`;
+
+  async function recover(escrow: `0x${string}`, side: number, signature: `0x${string}`) {
+    const message = keccak256(encodePacked(['address', 'uint8', 'uint256'], [escrow, side, BigInt(CONTRACTS.chainId)]));
+    return (await recoverAddress({ hash: hashMessage({ raw: message }), signature })).toLowerCase();
+  }
+
+  afterEach(() => {
+    delete process.env.ORACLE_SIGNER_PRIVATE_KEY_PREVIOUS;
+    vi.mocked(readSettlementSigner).mockImplementation(async () =>
+      privateKeyToAccount(process.env.ORACLE_SIGNER_PRIVATE_KEY as `0x${string}`).address
+    );
+  });
+
+  it('signs with ORACLE_SIGNER_PRIVATE_KEY_PREVIOUS for an escrow activated before the rotation', async () => {
+    process.env.ORACLE_SIGNER_PRIVATE_KEY_PREVIOUS = PREVIOUS_KEY;
+    const previous = privateKeyToAccount(PREVIOUS_KEY).address;
+    vi.mocked(readSettlementSigner).mockResolvedValue(previous);
+
+    expect(await recover(ESCROW_A, 1, await signSettlement(ESCROW_A, 1))).toBe(previous.toLowerCase());
+    expect(await recover(ESCROW_A, VOID_MARKER, await signVoid(ESCROW_A))).toBe(previous.toLowerCase());
+    expect(readSettlementSigner).toHaveBeenCalledWith(ESCROW_A);
+  });
+
+  it('still uses the current key for escrows activated after the rotation', async () => {
+    process.env.ORACLE_SIGNER_PRIVATE_KEY_PREVIOUS = PREVIOUS_KEY;
+    const current = privateKeyToAccount(process.env.ORACLE_SIGNER_PRIVATE_KEY as `0x${string}`).address;
+    expect(await recover(ESCROW_A, 0, await signSettlement(ESCROW_A, 0))).toBe(current.toLowerCase());
+  });
+
+  it('fails loudly when no configured key matches the escrow', async () => {
+    vi.mocked(readSettlementSigner).mockResolvedValue(privateKeyToAccount(PREVIOUS_KEY).address);
+    await expect(signSettlement(ESCROW_A, 0)).rejects.toThrow(/no configured oracle key matches/);
+    await expect(signVoid(ESCROW_A)).rejects.toThrow(/no configured oracle key matches/);
   });
 });

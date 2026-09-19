@@ -65,13 +65,24 @@ export async function verifyDuelJoined(txHash: `0x${string}`, escrowAddress: str
     if (!event) throw new Error('DuelJoined event not found for this duel and wallet in that transaction.');
 }
 
-/** Verifies a settle() tx really happened on this specific escrow; returns the real winnerSide from its Settled event. */
-export async function verifyDuelSettled(txHash: `0x${string}`, escrowAddress: string): Promise<{ winnerSide: 0 | 1 }> {
+/**
+ * Verifies a settle() tx really happened on this specific escrow; returns the
+ * real winnerSide from its Settled event, plus any PayoutDeferred events the
+ * same escrow emitted in that tx (a recipient the stake token refused to pay,
+ * e.g. USDC-blacklisted -- credited to owed[] for a later withdraw()).
+ */
+export async function verifyDuelSettled(
+    txHash: `0x${string}`,
+    escrowAddress: string
+): Promise<{ winnerSide: 0 | 1; deferredPayouts: { to: string; amount: string }[] }> {
     const receipt = await getSuccessfulReceipt(txHash);
-    const events = parseEventLogs({ abi: BattleEscrowAbi, logs: receipt.logs, eventName: 'Settled' });
-    const event = events.find((e) => e.address.toLowerCase() === escrowAddress.toLowerCase());
+    const fromEscrow = (e: { address: string }) => e.address.toLowerCase() === escrowAddress.toLowerCase();
+    const event = parseEventLogs({ abi: BattleEscrowAbi, logs: receipt.logs, eventName: 'Settled' }).find(fromEscrow);
     if (!event) throw new Error('Settled event not found for this duel in that transaction.');
-    return { winnerSide: Number((event as any).args.winnerSide) as 0 | 1 };
+    const deferredPayouts = parseEventLogs({ abi: BattleEscrowAbi, logs: receipt.logs, eventName: 'PayoutDeferred' })
+        .filter(fromEscrow)
+        .map((e: any) => ({ to: String(e.args.to).toLowerCase(), amount: String(e.args.amount) }));
+    return { winnerSide: Number((event as any).args.winnerSide) as 0 | 1, deferredPayouts };
 }
 
 /** Verifies a voidActive() tx really happened on this specific escrow (the HELD-duel
