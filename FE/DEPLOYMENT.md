@@ -146,11 +146,22 @@ scheduled directly against Cloud Run instead — bypassing the Vercel proxy
 entirely:
 
 ```bash
+# Settle cron (runs every minute to settle ended duels)
 gcloud scheduler jobs create http utd-settle-cron \
   --schedule="* * * * *" \
   --uri="<cloud-run-service-url>/api/cron/settle" \
   --http-method=GET \
   --headers="Authorization=Bearer <CRON_SECRET value>" \
+  --location=<your-region>
+
+# Daily discovery scan (runs daily at 00:00 UTC to refresh the Top 10 tokens from DexScreener)
+gcloud scheduler jobs create http utd-scan-cron \
+  --schedule="0 0 * * *" \
+  --time-zone="Etc/UTC" \
+  --uri="<cloud-run-service-url>/api/scan" \
+  --http-method=POST \
+  --headers="Content-Length=0,Content-Type=application/json" \
+  --attempt-deadline=180s \
   --location=<your-region>
 ```
 
