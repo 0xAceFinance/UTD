@@ -32,8 +32,8 @@ export interface AirdropTaskDef {
  * claimed.
  */
 export const SOCIAL_LINKS = {
-    x: process.env.NEXT_PUBLIC_UTD_X_URL || null,
-    telegram: process.env.NEXT_PUBLIC_UTD_TELEGRAM_URL || null,
+    x: process.env.NEXT_PUBLIC_UTD_X_URL || "https://x.com/UTD_RHC",
+    telegram: process.env.NEXT_PUBLIC_UTD_TELEGRAM_URL || "https://t.me/utd_rh",
 }
 
 export const AIRDROP_TASKS: AirdropTaskDef[] = [
