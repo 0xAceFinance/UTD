@@ -24,6 +24,7 @@ import { useWallet } from "@/hooks/useWallet"
 import { pointsForReferralIndex } from "@/lib/referralPoints"
 import type { AirdropTaskState } from "@/lib/airdrop"
 import { notifyAirdropChanged, useAirdrop } from "../components/airdrop/useAirdrop"
+import { getStoredRef } from "@/lib/referralClient"
 
 const TASK_ICON: Record<string, LucideIcon> = {
     "connect-wallet": Wallet,
@@ -43,12 +44,6 @@ const SECTIONS: { id: AirdropTaskState["category"]; title: string }[] = [
     { id: "arena", title: "In the arena" },
 ]
 
-function readRef(): string | undefined {
-    if (typeof window === "undefined") return undefined
-    const ref = new URLSearchParams(window.location.search).get("ref")
-    return ref ? ref.trim().toUpperCase() : undefined
-}
-
 export default function AirdropPage() {
     const { address, connected } = useWallet()
     const { data, setData, loading, refresh } = useAirdrop(address)
@@ -60,7 +55,7 @@ export default function AirdropPage() {
     const [burst, setBurst] = useState<{ id: string; points: number } | null>(null)
 
     const origin = typeof window !== "undefined" ? window.location.origin : ""
-    const referralLink = data?.referralCode ? `${origin}/landing?ref=${data.referralCode}` : null
+    const referralLink = data?.referralCode ? `${origin}/airdrop?ref=${data.referralCode}` : null
 
     const celebrate = (id: string, points: number) => {
         notifyAirdropChanged()
@@ -80,7 +75,7 @@ export default function AirdropPage() {
             const res = await fetch("/api/whitelist", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ identifier: address, signature, nonce: nonceBody.data.nonce, ref: readRef() }),
+                body: JSON.stringify({ identifier: address, signature, nonce: nonceBody.data.nonce, ref: getStoredRef() }),
             })
             const body = await res.json()
             if (!body?.success) throw new Error(typeof body?.error === "string" ? body.error : "Verification failed.")
@@ -298,7 +293,22 @@ export default function AirdropPage() {
                                     </span>
                                     . Each one after is worth a little less.
                                 </p>
-                                <div className="mt-4 flex gap-2">
+                                <div className="mt-4 flex items-center justify-between font-mono text-[11px] text-[var(--dim)]">
+                                    <span>CODE: <strong className="text-[var(--acid)] font-bold tracking-wider">{data.referralCode}</strong></span>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (data.referralCode) {
+                                                navigator.clipboard.writeText(data.referralCode)
+                                                toast.success("Referral code copied!")
+                                            }
+                                        }}
+                                        className="text-[var(--acid)] hover:underline"
+                                    >
+                                        Copy Code
+                                    </button>
+                                </div>
+                                <div className="mt-2 flex gap-2">
                                     <input
                                         readOnly
                                         value={referralLink}
@@ -432,6 +442,7 @@ function CopyButton({ text }: { text: string }) {
                 try {
                     await navigator.clipboard.writeText(text)
                     setCopied(true)
+                    toast.success("Referral link copied!")
                     setTimeout(() => setCopied(false), 1500)
                 } catch {
                     toast.error("Couldn't copy. Select the link and copy it manually.")
