@@ -154,13 +154,14 @@ gcloud scheduler jobs create http utd-settle-cron \
   --headers="Authorization=Bearer <CRON_SECRET value>" \
   --location=<your-region>
 
-# Daily discovery scan (runs daily at 00:00 UTC to refresh the Top 10 tokens from DexScreener)
+# 15-second discovery scan (runs continuously every 15s across the 1-minute cron window)
 gcloud scheduler jobs create http utd-scan-cron \
-  --schedule="0 0 * * *" \
+  --schedule="* * * * *" \
   --time-zone="Etc/UTC" \
-  --uri="<cloud-run-service-url>/api/scan" \
+  --uri="<cloud-run-service-url>/api/scan?loop=true" \
   --http-method=POST \
-  --headers="Content-Length=0,Content-Type=application/json" \
+  --message-body="{}" \
+  --headers="Content-Type=application/json" \
   --attempt-deadline=180s \
   --location=<your-region>
 ```
