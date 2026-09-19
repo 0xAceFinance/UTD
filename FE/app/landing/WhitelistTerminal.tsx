@@ -302,7 +302,7 @@ function ReferralDashboardView({ dashboard, referralLink }: { dashboard: Referra
     }
 
     const shareText = encodeURIComponent(
-        "I just locked in my UTD day-one pass. Pick a side, lock a stake, whoever pumps harder wins.",
+        "I just locked in my @UTD_RHC day-one pass. Pick a side, lock a stake, whoever pumps harder wins.",
     )
     const shareUrl = referralLink ? encodeURIComponent(referralLink) : ""
 

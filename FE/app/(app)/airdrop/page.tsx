@@ -115,7 +115,7 @@ export default function AirdropPage() {
         if (task.id === "follow-x") return data?.socialLinks.x ?? null
         if (task.id === "join-telegram") return data?.socialLinks.telegram ?? null
         if (task.id === "post-x") {
-            const text = encodeURIComponent("I'm lining up for the UTD genesis airdrop. Two tokens, one timer, whoever pumps harder wins.")
+            const text = encodeURIComponent("I'm lining up for the @UTD_RHC genesis airdrop. Two tokens, one timer, whoever pumps harder wins.")
             return `https://x.com/intent/tweet?text=${text}${referralLink ? `&url=${encodeURIComponent(referralLink)}` : ""}`
         }
         return null
