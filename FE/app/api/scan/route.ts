@@ -15,3 +15,8 @@ export async function POST() {
         return failure((err as Error).message);
     }
 }
+
+export async function GET() {
+    return POST();
+}
+
