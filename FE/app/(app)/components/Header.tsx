@@ -81,8 +81,14 @@ function AirdropButton({ active }: { active: boolean }) {
 export default function Header() {
     const pathname = usePathname()
 
+    // will-change-transform forces this onto its own compositor layer -- without
+    // it, some browsers (notably Chromium on Android) fail to recompose this
+    // sticky header's backdrop-blur during scroll, leaving a stale blurred
+    // "ghost" smeared over content that has already scrolled past. Worse with
+    // continuous nearby CSS animation (the LIVE dot pulse, the battle-bar
+    // transitions).
     return (
-        <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--s0)]/95 pt-[env(safe-area-inset-top)] backdrop-blur">
+        <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-[var(--s0)]/95 pt-[env(safe-area-inset-top)] backdrop-blur will-change-transform">
             <div className="flex h-14 items-center justify-between gap-3 px-4 sm:px-6 lg:h-16 lg:px-8">
                 <div className="flex min-w-0 items-center gap-3">
                     <Link href="/duels" className="flex-none lg:hidden" aria-label="UTD home">
