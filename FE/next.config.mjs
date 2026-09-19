@@ -19,18 +19,28 @@ const nextConfig = {
   ...(process.env.DOCKER_BUILD === 'true' ? { output: 'standalone' } : {}),
   transpilePackages: ['@mcapduel/engine', '@mcapduel/matchmaking', '@mcapduel/points', '@mcapduel/risk'],
   async rewrites() {
-    // Set only on Vercel. Proxies every /api/* call to the GCP-hosted
-    // backend so frontend code keeps calling relative "/api/..." paths
-    // unchanged -- Vercel serves pages, GCP Cloud Run serves the API.
-    // Unset in local dev and in the GCP deployment itself, where this app's
-    // own /api routes should serve directly.
+    // Set on Vercel, and locally when testing against the real backend.
+    // Proxies every /api/* call to the GCP-hosted backend so frontend code
+    // keeps calling relative "/api/..." paths unchanged -- Vercel serves
+    // pages, GCP Cloud Run serves the API. Unset in local dev when you want
+    // this app's own /api routes to serve directly against Anvil/local Mongo
+    // instead, and in the GCP deployment itself.
+    //
+    // Must be beforeFiles: this app still has its own app/api/** route
+    // files on disk (leftover from before the BE/FE split), and a plain
+    // array here is an "afterFiles" rewrite -- it only applies when no
+    // filesystem route already matches, so those local routes would always
+    // win and silently swallow BACKEND_API_URL. beforeFiles intercepts
+    // ahead of the filesystem check so the proxy always wins when set.
     if (!process.env.BACKEND_API_URL) return []
-    return [
-      {
-        source: '/api/:path*',
-        destination: `${process.env.BACKEND_API_URL}/api/:path*`,
-      },
-    ]
+    return {
+      beforeFiles: [
+        {
+          source: '/api/:path*',
+          destination: `${process.env.BACKEND_API_URL}/api/:path*`,
+        },
+      ],
+    }
   },
   eslint: {
     // No ESLint config exists in this project yet (no .eslintrc/eslint.config.*,
