@@ -4,6 +4,7 @@ import { Press_Start_2P } from "next/font/google"
 import "./globals.css"
 import Providers from "@/hooks/providers"
 import { Toaster } from "@/components/ui/sonner"
+import { ReferralTracker } from "@/components/ReferralTracker"
 
 const pressStart2P = Press_Start_2P({
   weight: "400",
@@ -44,7 +45,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${pressStart2P.variable} dark`}>
       <body className="min-h-screen font-mono antialiased bg-[#060806] text-[#e4e4e7]">
-        <Providers>{children}</Providers>
+        <Providers>
+          <ReferralTracker />
+          {children}
+        </Providers>
         <Toaster position="top-right" richColors closeButton />
       </body>
     </html>

@@ -37,12 +37,12 @@ function buildShareIntent(duel: DuelDTO, myResult: "won" | "lost" | null): strin
     const loserSymbol = duel.winnerSide === 0 ? duel.tokenB.symbol : duel.tokenA.symbol
     const text =
         myResult === "won"
-            ? `I won my duel on @mcapduel. ${winnerSymbol} outperformed ${loserSymbol}.`
+            ? `I won my duel on @UTD_RHC. ${winnerSymbol} outperformed ${loserSymbol}.`
             : myResult === "lost"
-              ? `Battled on @mcapduel. ${winnerSymbol} vs ${loserSymbol}.`
-              : `${winnerSymbol} defeated ${loserSymbol} in today's @mcapduel.`
+              ? `Battled on @UTD_RHC. ${winnerSymbol} vs ${loserSymbol}.`
+              : `${winnerSymbol} defeated ${loserSymbol} in today's @UTD_RHC.`
     const url = typeof window !== "undefined" ? `${window.location.origin}/duels/${duel._id}` : ""
-    return `https://twitter.com/intent/tweet?${new URLSearchParams({ text, url }).toString()}`
+    return `https://x.com/intent/tweet?${new URLSearchParams({ text, url }).toString()}`
 }
 
 function useCountdown(target?: string) {

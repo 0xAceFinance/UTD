@@ -73,6 +73,7 @@ gcloud run deploy utd-backend \
   --source . \
   --allow-unauthenticated \
   --set-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0x65f58fA80dd62460980B14979f062F1E67D35Cff,NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168" \
+  --set-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0x32aB0586A99e7b7246225689dD6847a77E1d946D,NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
   --set-secrets "ORACLE_SIGNER_PRIVATE_KEY=ORACLE_SIGNER_PRIVATE_KEY:latest,RELAYER_PRIVATE_KEY=RELAYER_PRIVATE_KEY:latest,MONGODB_URI=MONGODB_URI:latest,CRON_SECRET=CRON_SECRET:latest,ADMIN_API_SECRET=ADMIN_API_SECRET:latest"
 ```
 
@@ -81,8 +82,8 @@ need to reach this service without a GCP identity token. The route-level
 checks already in the code (`x-admin-secret`, the cron bearer token, on-chain
 tx verification) are what actually gate access, same as they do today.
 
-Note the **Service URL** the command prints
-(`https://utd-backend-xxxxx-uc.a.run.app` or similar) — you need it in both
+Note the **Service URL**:
+`https://utd-backend-998336196389.us-central1.run.app` — you need it in both
 of the next two parts.
 
 If the deploy fails with a Secret Manager permission error, grant the Cloud
@@ -146,11 +147,23 @@ scheduled directly against Cloud Run instead — bypassing the Vercel proxy
 entirely:
 
 ```bash
+# Settle cron (runs every minute to settle ended duels)
 gcloud scheduler jobs create http utd-settle-cron \
   --schedule="* * * * *" \
   --uri="<cloud-run-service-url>/api/cron/settle" \
   --http-method=GET \
   --headers="Authorization=Bearer <CRON_SECRET value>" \
+  --location=<your-region>
+
+# 15-second discovery scan (runs continuously every 15s across the 1-minute cron window)
+gcloud scheduler jobs create http utd-scan-cron \
+  --schedule="* * * * *" \
+  --time-zone="Etc/UTC" \
+  --uri="<cloud-run-service-url>/api/scan?loop=true" \
+  --http-method=POST \
+  --message-body="{}" \
+  --headers="Content-Type=application/json" \
+  --attempt-deadline=180s \
   --location=<your-region>
 ```
 

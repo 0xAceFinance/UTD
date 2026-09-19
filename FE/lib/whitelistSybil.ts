@@ -15,8 +15,13 @@ export async function isSuspectedSelfReferral(
     newWallet: string,
     newWalletIp: string | undefined
 ): Promise<boolean> {
-    if (referrerWallet === newWallet) return true;
-    if (!newWalletIp) return false; // no IP signal to cluster on
+    if (referrerWallet.toLowerCase() === newWallet.toLowerCase()) return true;
+
+    // Do not aggressively penalize different wallets sharing an IP or NAT (home/office Wi-Fi, mobile CGNAT)
+    // unless STRICT_SYBIL is explicitly enabled.
+    if (process.env.STRICT_SYBIL !== 'true') return false;
+
+    if (!newWalletIp || newWalletIp === 'unknown') return false;
 
     const entries = await WhitelistEntry.find({ ip: { $exists: true, $ne: null } }, { identifier: 1, ip: 1 }).lean();
 

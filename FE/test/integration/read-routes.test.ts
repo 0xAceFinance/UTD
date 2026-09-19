@@ -104,7 +104,7 @@ describe('POST /api/scan', () => {
       },
     ]);
 
-    const res = await scanRoute();
+    const res = await scanRoute(getReq('http://localhost/api/scan'));
     expect(res.status).toBe(200);
     const json = (await body(res)).data;
     expect(json.candidatePoolSize).toBe(1);
@@ -118,7 +118,7 @@ describe('POST /api/scan', () => {
     await createDuelToken({ symbol: 'STALE' });
     listCandidatesMock.mockResolvedValue([]);
 
-    await scanRoute();
+    await scanRoute(getReq('http://localhost/api/scan'));
 
     const tokens = await DuelToken.find();
     expect(tokens.find((t) => t.symbol === 'STALE')).toBeUndefined();
@@ -127,7 +127,7 @@ describe('POST /api/scan', () => {
   it('records a FAILED health sample (not a thrown 500 that skips it) when the data source errors', async () => {
     listCandidatesMock.mockRejectedValue(new Error('DexScreener is down'));
 
-    const res = await scanRoute();
+    const res = await scanRoute(getReq('http://localhost/api/scan'));
     expect(res.status).toBe(500);
 
     const health = await OracleHealthSample.find();

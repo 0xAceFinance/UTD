@@ -14,11 +14,7 @@ interface ReferralDashboard {
     points: number
 }
 
-/** Reads `?ref=CODE` from the URL. Only ever called client-side (see the effect below) so the SSR pass and first client render agree -- no hydration mismatch from `window` not existing on the server. */
-function getRefFromUrl(): string | undefined {
-    const ref = new URLSearchParams(window.location.search).get("ref")
-    return ref ? ref.trim().toUpperCase() : undefined
-}
+import { getStoredRef } from "@/lib/referralClient"
 
 export function WhitelistTerminal() {
     const { address, isConnected } = useAccount()
@@ -26,7 +22,7 @@ export function WhitelistTerminal() {
 
     const [refCode, setRefCode] = useState<string | undefined>(undefined)
     useEffect(() => {
-        setRefCode(getRefFromUrl())
+        setRefCode(getStoredRef())
     }, [])
 
     const [dashboard, setDashboard] = useState<ReferralDashboard | null>(null)
@@ -306,7 +302,7 @@ function ReferralDashboardView({ dashboard, referralLink }: { dashboard: Referra
     }
 
     const shareText = encodeURIComponent(
-        "I just locked in my UTD day-one pass. Pick a side, lock a stake, whoever pumps harder wins.",
+        "I just locked in my @UTD_RHC day-one pass. Pick a side, lock a stake, whoever pumps harder wins.",
     )
     const shareUrl = referralLink ? encodeURIComponent(referralLink) : ""
 
