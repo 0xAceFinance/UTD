@@ -1,0 +1,42 @@
+name: Deploy Backend to GCP Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'FE/**'
+      - 'engine/**'
+      - 'matchmaking/**'
+      - 'points/**'
+      - 'risk/**'
+      - 'cloudbuild.yaml'
+      - '.github/workflows/deploy-gcp.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Build and Deploy to Cloud Run
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY || secrets.GCP_CREDENTIALS }}
+
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        run: |
+          cd FE
+          gcloud run deploy utd-backend \
+            --source . \
+            --region us-central1 \
+            --allow-unauthenticated \
+            --set-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0x32aB0586A99e7b7246225689dD6847a77E1d946D,NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168" \
+            --set-secrets "ORACLE_SIGNER_PRIVATE_KEY=ORACLE_SIGNER_PRIVATE_KEY:latest,RELAYER_PRIVATE_KEY=RELAYER_PRIVATE_KEY:latest,MONGODB_URI=MONGODB_URI:latest,CRON_SECRET=CRON_SECRET:latest,ADMIN_API_SECRET=ADMIN_API_SECRET:latest"

@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import "./theme.css"
 import { ThePitGame } from "./ThePitGame"
 import { CombatCard3D } from "./CombatCard3D"
@@ -84,10 +85,9 @@ export default function LandingPage() {
                             {soundOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
                         </button>
 
-                        <span className="utd-btn-static px-4 py-2.5 text-[9px]">
-                            <i />
-                            LAUNCHING SOON
-                        </span>
+                        <Link href="/duels" className="utd-btn px-4 py-2.5 text-[9px]">
+                            ENTER APP →
+                        </Link>
                     </div>
                 </div>
             </nav>
@@ -125,10 +125,9 @@ export default function LandingPage() {
                     </p>
 
                     <div className="mt-8">
-                        <span className="utd-btn-static px-7 py-4 text-[11px]">
-                            <i />
-                            LAUNCHING SOON
-                        </span>
+                        <Link href="/duels" className="utd-btn px-7 py-4 text-[11px]">
+                            ENTER DUELS ARENA →
+                        </Link>
                     </div>
 
                     <dl className="mt-14 grid grid-cols-2 gap-px bg-[var(--line)] sm:grid-cols-4">

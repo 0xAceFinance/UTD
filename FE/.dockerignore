@@ -1,0 +1,9 @@
+node_modules
+packages/*/node_modules
+.next
+.git
+.mongo
+*.log
+.env
+.env.local
+.vercel

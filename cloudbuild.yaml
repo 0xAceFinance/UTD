@@ -1,0 +1,16 @@
+steps:
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        cd FE
+        gcloud run deploy utd-backend \
+          --source . \
+          --region us-central1 \
+          --allow-unauthenticated \
+          --set-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0x32aB0586A99e7b7246225689dD6847a77E1d946D,NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168" \
+          --set-secrets "ORACLE_SIGNER_PRIVATE_KEY=ORACLE_SIGNER_PRIVATE_KEY:latest,RELAYER_PRIVATE_KEY=RELAYER_PRIVATE_KEY:latest,MONGODB_URI=MONGODB_URI:latest,CRON_SECRET=CRON_SECRET:latest,ADMIN_API_SECRET=ADMIN_API_SECRET:latest"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
