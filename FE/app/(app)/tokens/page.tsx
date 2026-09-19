@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { DuelTokenDTO, formatUsd } from "../components/duel/types"
+import { GmgnLink } from "../components/duel/GmgnLink"
 
 /** Shared column template for the desktop table (header + rows). */
-const COLS = "md:grid-cols-[40px_minmax(0,1fr)_96px_96px_96px_80px_112px]"
+const COLS = "md:grid-cols-[40px_minmax(0,1fr)_96px_96px_96px_80px_200px]"
 
 export default function TokensPage() {
     const [tokens, setTokens] = useState<DuelTokenDTO[]>([])
@@ -73,6 +74,9 @@ export default function TokensPage() {
                                             <span className="utd-pixel truncate text-[11px] text-white">{t.symbol}</span>
                                         </div>
                                         <div className="mt-1 truncate text-[13px] text-[var(--faint)]">{t.name}</div>
+                                        <div className="mt-1 truncate font-mono text-[12px] text-[var(--faint)] md:hidden">
+                                            Liq {formatUsd(t.liquidityUsd)} · Vol {formatUsd(t.volume24hUsd)}
+                                        </div>
                                     </div>
 
                                     {/* Phone: change + mcap stacked beside the name. */}
@@ -98,14 +102,12 @@ export default function TokensPage() {
                                         {change}
                                     </span>
 
-                                    {/* Phone: liquidity/volume line + action. */}
-                                    <div className="col-span-2 flex items-center justify-between gap-3 border-t border-[var(--line)] pt-3 md:col-span-1 md:block md:border-0 md:pt-0 md:text-right">
-                                        <span className="font-mono text-[12px] text-[var(--faint)] md:hidden">
-                                            Liq {formatUsd(t.liquidityUsd)} · Vol {formatUsd(t.volume24hUsd)}
-                                        </span>
+                                    {/* Actions: a full-width pair on phones, right-aligned on desktop. */}
+                                    <div className="col-span-2 grid grid-cols-2 gap-2 border-t border-[var(--line)] pt-3 md:col-span-1 md:flex md:justify-end md:border-0 md:pt-0">
+                                        <GmgnLink tokenAddress={t.tokenAddress} symbol={t.symbol} className="h-10 md:h-9" />
                                         <Link
                                             href={`/duels/create?tokenA=${t.symbol}`}
-                                            className="app-chip h-10 flex-none justify-center md:h-9"
+                                            className="app-chip h-10 justify-center md:h-9"
                                         >
                                             Challenge
                                         </Link>

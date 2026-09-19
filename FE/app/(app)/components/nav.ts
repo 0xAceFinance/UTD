@@ -31,5 +31,6 @@ export function routeTitle(pathname: string): string {
     if (/^\/duels\/[^/]+/.test(pathname)) return "Duel"
     if (pathname.startsWith("/tokens")) return "Fighters"
     if (pathname.startsWith("/profile")) return "Record"
+    if (pathname.startsWith("/airdrop")) return "Airdrop"
     return "Duels"
 }

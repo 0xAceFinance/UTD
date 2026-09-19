@@ -1,7 +1,7 @@
 "use client"
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { ArrowUpDown, Plus, User } from "lucide-react"
+import { ArrowUpDown, ExternalLink, Plus, User } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation"
 import { useWallet } from "@/hooks/useWallet"
 import { joinDuelOnChain } from "@/lib/duelContract"
 import { SideTag, StatusTag, TierBadge } from "./duel/SideTag"
+import { gmgnTokenUrl } from "@/lib/tokenLinks"
 import { DuelDTO, DuelStatus, DuelTokenDTO, formatRelativeTime, formatUsd, pctReturn } from "./duel/types"
 
 const STATUS_TABS: { label: string; value: DuelStatus | "ALL" }[] = [
@@ -178,19 +179,24 @@ export default function Dashboard() {
                               <div key={i} className="app-card h-[76px] w-36 flex-none animate-pulse" />
                           ))
                         : tokens.slice(0, 8).map((t) => (
-                              <div
+                              // Each card opens the token on GMGN.
+                              <a
                                   key={t._id}
-                                  className="app-card w-36 flex-none snap-start p-3 lg:w-auto lg:min-w-[132px] lg:flex-1"
+                                  href={gmgnTokenUrl(t.tokenAddress)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  aria-label={`${t.symbol} on GMGN (opens in a new tab)`}
+                                  className="app-card group w-36 flex-none snap-start p-3 transition-colors hover:border-[var(--line-2)] lg:w-auto lg:min-w-[132px] lg:flex-1"
                               >
                                   <div className="flex items-baseline justify-between gap-2">
                                       <span className="utd-pixel truncate text-[10px] text-white">{t.symbol}</span>
-                                      <span className="font-mono text-[10px] text-[var(--faint)]">#{t.rank}</span>
+                                      <ExternalLink className="h-3 w-3 flex-none text-[var(--faint)] transition-colors group-hover:text-[var(--acid)]" />
                                   </div>
                                   <div className="mt-2.5 flex items-baseline justify-between gap-2 font-mono text-[12px]">
                                       <Change pct={t.change24hPct} />
                                       <span className="text-[var(--dim)]">{formatUsd(t.marketCapUsd)}</span>
                                   </div>
-                              </div>
+                              </a>
                           ))}
                 </div>
             </section>

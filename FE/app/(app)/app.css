@@ -162,3 +162,136 @@
     transition: none;
   }
 }
+
+/* --- Airdrop ------------------------------------------------------------- */
+
+/* Hero: acid glow from the right over a faint grid, so it reads as the one
+   "event" surface in an otherwise flat app. */
+.airdrop-hero {
+  background:
+    radial-gradient(120% 90% at 85% 40%, rgba(43, 232, 132, 0.16), transparent 60%),
+    linear-gradient(rgba(43, 232, 132, 0.05) 1px, transparent 1px) 0 0 / 100% 24px,
+    linear-gradient(90deg, rgba(43, 232, 132, 0.05) 1px, transparent 1px) 0 0 / 24px 100%,
+    var(--s1);
+}
+
+/* Pixel coins orbiting the mascot. Each coin is placed round the ring by --i
+   and the ring itself rotates. */
+.airdrop-orbit-ring {
+  animation: airdrop-spin 14s linear infinite;
+}
+.airdrop-coin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  background: #fbbf24;
+  box-shadow:
+    inset -3px -3px 0 #b45309,
+    inset 3px 3px 0 #fde68a,
+    0 0 10px rgba(251, 191, 36, 0.55);
+  transform: rotate(calc(var(--i) * 60deg)) translateY(-62px);
+}
+@media (min-width: 640px) {
+  .airdrop-coin {
+    transform: rotate(calc(var(--i) * 60deg)) translateY(-78px);
+  }
+}
+.airdrop-mascot {
+  animation: airdrop-bob 3.2s ease-in-out infinite;
+}
+
+@keyframes airdrop-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes airdrop-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* "+250" that floats off a task when it completes. */
+.airdrop-burst {
+  animation: airdrop-burst 1.3s ease-out forwards;
+  text-shadow: 0 0 10px rgba(43, 232, 132, 0.8);
+}
+@keyframes airdrop-burst {
+  0% { opacity: 0; transform: translateY(10px) scale(0.8); }
+  15% { opacity: 1; transform: translateY(0) scale(1.15); }
+  100% { opacity: 0; transform: translateY(-28px) scale(1); }
+}
+
+/* Sidebar entry: the one nav item that isn't a plain row. A slow shimmer
+   travels round its border. */
+.app-airdrop-card {
+  position: relative;
+  display: block;
+  padding: 0.85rem 0.9rem;
+  background:
+    radial-gradient(120% 120% at 100% 0%, rgba(43, 232, 132, 0.18), transparent 60%),
+    var(--s2);
+  border: 1px solid rgba(43, 232, 132, 0.4);
+  overflow: hidden;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.app-airdrop-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.09) 50%, transparent 65%);
+  transform: translateX(-100%);
+  animation: airdrop-shimmer 3.6s ease-in-out infinite;
+  pointer-events: none;
+}
+.app-airdrop-card:hover,
+.app-airdrop-card.is-active {
+  border-color: var(--acid);
+}
+@keyframes airdrop-shimmer {
+  0%, 55% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Mobile top-bar button (the tab bar is full). */
+/* No `display` here on purpose: this file is unlayered, so a display value
+   would beat Tailwind's lg:hidden on the element. Layout comes from classes. */
+.app-airdrop-btn {
+  position: relative;
+  height: 2.25rem;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.7rem;
+  border: 1px solid rgba(43, 232, 132, 0.55);
+  background:
+    radial-gradient(120% 120% at 100% 0%, rgba(43, 232, 132, 0.22), transparent 60%),
+    var(--s2);
+  color: var(--acid);
+  box-shadow: 0 0 14px -4px rgba(43, 232, 132, 0.7);
+}
+.app-airdrop-btn.is-active {
+  background: var(--acid);
+  color: var(--acid-ink);
+}
+.app-airdrop-dot {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 9px;
+  height: 9px;
+  background: #fbbf24;
+  border: 2px solid var(--s0);
+  animation: utd-breathe 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .airdrop-orbit-ring,
+  .airdrop-mascot,
+  .app-airdrop-card::after,
+  .app-airdrop-dot {
+    animation: none;
+  }
+  .airdrop-burst {
+    animation-duration: 0.01s;
+  }
+}

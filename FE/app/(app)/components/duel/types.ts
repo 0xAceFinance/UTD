@@ -3,6 +3,8 @@ export interface DuelTokenDTO {
     symbol: string
     name: string
     rank: number
+    /** On-chain contract address (Robinhood Chain). */
+    tokenAddress: string
     marketCapUsd: number
     liquidityUsd: number
     volume24hUsd: number
@@ -12,6 +14,8 @@ export interface DuelTokenDTO {
 export interface DuelTokenSideDTO {
     symbol: string
     name: string
+    /** Absent on legacy duels created before addresses were stored. */
+    tokenAddress?: string
     startMarketCapUsd: number
     currentMarketCapUsd: number
     sustainedPeakMarketCapUsd: number

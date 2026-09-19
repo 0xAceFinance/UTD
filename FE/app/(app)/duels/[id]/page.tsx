@@ -19,6 +19,7 @@ import { toast } from "sonner"
 import { useWallet } from "@/hooks/useWallet"
 import { cancelDuelOnChain, expireDuelOnChain, settleDuelOnChain, refundStaleDuelOnChain } from "@/lib/duelContract"
 import { SideTag } from "../../components/duel/SideTag"
+import { GmgnLink } from "../../components/duel/GmgnLink"
 import { DuelDTO, formatUsd, pctReturn } from "../../components/duel/types"
 
 function buildShareIntent(duel: DuelDTO, myResult: "won" | "lost" | null): string {
@@ -213,6 +214,12 @@ export default function DuelDetailPage() {
                         <SideTag side="A" label={duel.tokenA.symbol} />
                         <span className="font-mono text-xs text-[var(--faint)]">VS</span>
                         <SideTag side="B" label={duel.tokenB.symbol} />
+                    </div>
+
+                    {/* Check both tokens on GMGN before taking the open slot. */}
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                        <GmgnLink tokenAddress={duel.tokenA.tokenAddress} symbol={duel.tokenA.symbol} label={`${duel.tokenA.symbol} on GMGN`} className="h-10" />
+                        <GmgnLink tokenAddress={duel.tokenB.tokenAddress} symbol={duel.tokenB.symbol} label={`${duel.tokenB.symbol} on GMGN`} className="h-10" />
                     </div>
 
                     <div className="mt-8">
@@ -417,6 +424,7 @@ export default function DuelDetailPage() {
                     side="A"
                     symbol={duel.tokenA.symbol}
                     name={duel.tokenA.name}
+                    tokenAddress={duel.tokenA.tokenAddress}
                     startMc={duel.tokenA.startMarketCapUsd}
                     gainPct={gainA}
                     leading={leading === "A"}
@@ -437,6 +445,7 @@ export default function DuelDetailPage() {
                     side="B"
                     symbol={duel.tokenB.symbol}
                     name={duel.tokenB.name}
+                    tokenAddress={duel.tokenB.tokenAddress}
                     startMc={duel.tokenB.startMarketCapUsd}
                     gainPct={gainB}
                     leading={leading === "B"}
@@ -489,6 +498,7 @@ function BattlePanel({
     side,
     symbol,
     name,
+    tokenAddress,
     startMc,
     gainPct,
     leading,
@@ -499,6 +509,7 @@ function BattlePanel({
     side: "A" | "B"
     symbol: string
     name?: string
+    tokenAddress?: string
     startMc: number
     gainPct: number
     leading: boolean
@@ -579,6 +590,8 @@ function BattlePanel({
                         <div className="font-mono text-xs text-[var(--acid)] mt-1">{formatUsd(peak)}</div>
                     </div>
                 </div>
+
+                <GmgnLink tokenAddress={tokenAddress} symbol={symbol} className="h-10 w-full" />
             </div>
         </div>
     )
