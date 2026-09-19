@@ -604,10 +604,16 @@ function BattlePanel({
     // the full bar width either side of center, so a flat or losing token
     // visibly shows little-to-no fill instead of always looking ~half full.
     const toBarPosition = (pct: number) => 50 + Math.max(-50, Math.min(50, pct))
-    const validatedPos = toBarPosition(gainPct)
     const livePos = toBarPosition(liveGainPct)
-    const fillLeft = Math.min(50, validatedPos)
-    const fillWidth = Math.abs(validatedPos - 50)
+    // Real gains here are often well under 1% -- a literal-width fill would be
+    // a 1-2px sliver that reads as "nothing rendered." Any nonzero gain gets
+    // boosted to at least MIN_VISIBLE_FILL_PCT of the bar so it's actually
+    // visible, without changing which side of center it's on. Exactly flat
+    // (gainPct === 0, e.g. a fresh LIVE duel) stays at zero width on purpose.
+    const MIN_VISIBLE_FILL_PCT = 3
+    const clampedGain = Math.max(-50, Math.min(50, gainPct))
+    const fillWidth = clampedGain === 0 ? 0 : Math.max(MIN_VISIBLE_FILL_PCT, Math.abs(clampedGain))
+    const fillLeft = clampedGain >= 0 ? 50 : 50 - fillWidth
 
     return (
         <div

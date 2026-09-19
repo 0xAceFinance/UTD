@@ -84,6 +84,28 @@ const nextConfig = {
     config.plugins.push(
       new webpack.IgnorePlugin({ resourceRegExp: /^@react-native-async-storage\/async-storage$/ })
     )
+    // viem's chain barrel (config/wagmiConfig.ts's `import { foundry, ... } from
+    // 'viem/chains'`, lib/chainVerify.ts's single-chain import) transitively
+    // includes viem's "tempo" chain support, whose ox dependency does
+    // `await import(someVariable)` to lazily load node:worker_threads -- a
+    // dynamic request webpack can't statically bundle ("Critical dependency:
+    // the request of a dependency is an expression"). That alone is just a
+    // warning, but it corrupts the chunk graph badly enough to crash static
+    // prerendering ("Cannot read properties of undefined (reading 'call')")
+    // -- and non-deterministically, since this repo's parallel webpack build
+    // workers (experimental.webpackBuildWorker etc. below) race on which
+    // worker compiles the broken chunk. Nothing here ever uses viem's tempo
+    // chain (it's Robinhood Chain / Anvil / mainnet / a couple testnets
+    // only), so the whole worker-pool machinery is dead weight either way --
+    // ignoring it at the module-request level (not just for server bundling)
+    // is what actually reaches the client/SSR bundle that was crashing here,
+    // unlike excluding it via serverExternalPackages (tried first; doesn't
+    // help since this bundle isn't server-only).
+    config.plugins.push(
+      new webpack.IgnorePlugin({
+        checkResource: (resource, context) => /[\\/]ox[\\/]_esm[\\/]tempo[\\/]/.test(context),
+      })
+    )
     return config
   },
 }
