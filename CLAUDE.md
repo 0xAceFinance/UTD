@@ -23,16 +23,20 @@ Two tokens using the "USDC" ticker on this chain are fakes, never use them:
 `0x0453dCF836Dc35DA9F8523ea2BB928268f16F073` ("Upsidedowncat"),
 `0x7eCca74AB958900EBBeD1b258cAb50Ae69409550` ("FatCatBatRatWifHat").
 
-### Duel contracts: DEPLOYED 2026-09-19 (DeployDuel.s.sol, deployer nonces 6-7)
+### Duel contracts: CURRENT deployment (DeployDuel.s.sol, deployer nonces 8-9)
+Durations exactly 5, 10, 15 or 20 min (MIN_DURATION 300, MAX_DURATION 1200, DURATION_STEP 300).
 | Contract | Address | Tx | Block |
 |---|---|---|---|
-| BattleEscrow (implementation) | `0x0400babC9C034bba510DDe52EB829F87739C5e41` | `0x6e62771756a53d1e77503a56821c7058cebca7deed10b6324ceff8a5ee6fc1f7` | 67027457 |
-| BattleEscrowFactory | `0x32aB0586A99e7b7246225689dD6847a77E1d946D` | `0xd1d471b516fab114f62d0a0be9fc3fbbec5b8bd29cbb0945f9b3266eb96b0dab` | 67027489 |
+| BattleEscrow (implementation) | `0x3F0F175EDBFb9688dC77ee0c6474030147784bCC` | `0xb6e72fd31262cb9f2891f9d61ca20896d2abcbca8b537cf811851868da5f8c4c` | 67283755 |
+| BattleEscrowFactory | `0xf56eED09448fE1C23009DA6D0f00DE1A927A862f` | `0x4cba9dc16e038b7781229727e5596718815012bbbbd61ac3f7c11eed72d28497` | 67283788 |
+
+SUPERSEDED (15-40 min rule, 0 duels, do not use): factory `0x32aB0586A99e7b7246225689dD6847a77E1d946D`,
+implementation `0x0400babC9C034bba510DDe52EB829F87739C5e41` (nonces 6-7, blocks 67027457-67027489).
 
 Verified on-chain after deploy: oracleSigner, platformTreasury, approvedStakeToken (USDG),
 minBuyIn=1000000 all as configured; owner = deployer; paused=false; implementation's
 initialize() reverts "already initialized".
-Source verified on Sourcify 2026-09-19: exact_match (creation + runtime) for both, solc 0.8.30
+Source verified on Sourcify: exact_match (creation + runtime) for both current contracts, solc 0.8.30
 (`forge verify-contract <addr> <path:Name> --verifier sourcify --chain 4663`; factory needs
 `--constructor-args` = abi-encoded (impl, oracle, treasury, stakeToken, minBuyIn)).
 Official explorer: https://robinhoodchain.blockscout.com (Cloudflare blocks scripted API access).
@@ -41,7 +45,7 @@ FE env:
 ```
 NEXT_PUBLIC_CHAIN_ID=4663
 NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com
-NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0x32aB0586A99e7b7246225689dD6847a77E1d946D
+NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0xf56eED09448fE1C23009DA6D0f00DE1A927A862f
 NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168
 ```
 

@@ -23,19 +23,26 @@ the points/rewards layer.
 
 ### Robinhood Chain mainnet (chain id 4663)
 
-Duel escrow system, deployed 2026-09-19 with `script/DeployDuel.s.sol`
+Duel escrow system, deployed with `script/DeployDuel.s.sol`
 (broadcast record: `broadcast/DeployDuel.s.sol/4663/run-latest.json`).
+Duels last exactly 5, 10, 15 or 20 minutes.
 
 | Contract | Address | Deploy tx | Block |
 |---|---|---|---|
-| `BattleEscrowFactory` | [`0x32aB0586A99e7b7246225689dD6847a77E1d946D`](https://robinscan.io/address/0x32aB0586A99e7b7246225689dD6847a77E1d946D) | `0xd1d471b516fab114f62d0a0be9fc3fbbec5b8bd29cbb0945f9b3266eb96b0dab` | 67027489 |
-| `BattleEscrow` (implementation) | [`0x0400babC9C034bba510DDe52EB829F87739C5e41`](https://robinscan.io/address/0x0400babC9C034bba510DDe52EB829F87739C5e41) | `0x6e62771756a53d1e77503a56821c7058cebca7deed10b6324ceff8a5ee6fc1f7` | 67027457 |
+| `BattleEscrowFactory` | [`0xf56eED09448fE1C23009DA6D0f00DE1A927A862f`](https://robinhoodchain.blockscout.com/address/0xf56eED09448fE1C23009DA6D0f00DE1A927A862f) | `0x4cba9dc16e038b7781229727e5596718815012bbbbd61ac3f7c11eed72d28497` | 67283788 |
+| `BattleEscrow` (implementation) | [`0x3F0F175EDBFb9688dC77ee0c6474030147784bCC`](https://robinhoodchain.blockscout.com/address/0x3F0F175EDBFb9688dC77ee0c6474030147784bCC) | `0xb6e72fd31262cb9f2891f9d61ca20896d2abcbca8b537cf811851868da5f8c4c` | 67283755 |
 
 Both contracts are source-verified on Sourcify with an **exact match** (creation and
 runtime bytecode, solc 0.8.30), which Blockscout also displays:
-[factory](https://repo.sourcify.dev/4663/0x32aB0586A99e7b7246225689dD6847a77E1d946D),
-[implementation](https://repo.sourcify.dev/4663/0x0400babC9C034bba510DDe52EB829F87739C5e41).
+[factory](https://repo.sourcify.dev/4663/0xf56eED09448fE1C23009DA6D0f00DE1A927A862f),
+[implementation](https://repo.sourcify.dev/4663/0x3F0F175EDBFb9688dC77ee0c6474030147784bCC).
 The chain's official explorer is Blockscout at `robinhoodchain.blockscout.com`.
+
+**Superseded, do not use:** the first deployment (factory
+`0x32aB0586A99e7b7246225689dD6847a77E1d946D`, implementation
+`0x0400babC9C034bba510DDe52EB829F87739C5e41`, blocks 67027457-67027489) enforced
+15-40 minute duels. It was replaced before any duel was created on it
+(`allDuelsLength() == 0`); its broadcast record is `run-1789815373989.json`.
 
 Users interact with the factory only. Each duel is a minimal-proxy clone of the
 implementation; the implementation itself is locked (`initialize()` reverts
