@@ -16,9 +16,42 @@ the points/rewards layer.
 > (`TokenFactory`/`PumpToken`/`PumpPool`) that earlier existed in this repo
 > have been removed as out of scope; tokens duelled here are discovered from
 > the open market by the backend's `engine` package, not launched by this
-> protocol. No contract addresses are stated below as live/deployed — the
-> only broadcast records present under `broadcast/` are local Anvil runs
-> (chain id 31337), not a real network deployment.
+> protocol. The only live deployment is the one listed under
+> [Deployments](#deployments) below.
+
+## Deployments
+
+### Robinhood Chain mainnet (chain id 4663)
+
+Duel escrow system, deployed 2026-09-19 with `script/DeployDuel.s.sol`
+(broadcast record: `broadcast/DeployDuel.s.sol/4663/run-latest.json`).
+
+| Contract | Address | Deploy tx | Block |
+|---|---|---|---|
+| `BattleEscrowFactory` | [`0x32aB0586A99e7b7246225689dD6847a77E1d946D`](https://robinscan.io/address/0x32aB0586A99e7b7246225689dD6847a77E1d946D) | `0xd1d471b516fab114f62d0a0be9fc3fbbec5b8bd29cbb0945f9b3266eb96b0dab` | 67027489 |
+| `BattleEscrow` (implementation) | [`0x0400babC9C034bba510DDe52EB829F87739C5e41`](https://robinscan.io/address/0x0400babC9C034bba510DDe52EB829F87739C5e41) | `0x6e62771756a53d1e77503a56821c7058cebca7deed10b6324ceff8a5ee6fc1f7` | 67027457 |
+
+Both contracts are source-verified on Sourcify with an **exact match** (creation and
+runtime bytecode, solc 0.8.30), which Blockscout also displays:
+[factory](https://repo.sourcify.dev/4663/0x32aB0586A99e7b7246225689dD6847a77E1d946D),
+[implementation](https://repo.sourcify.dev/4663/0x0400babC9C034bba510DDe52EB829F87739C5e41).
+The chain's official explorer is Blockscout at `robinhoodchain.blockscout.com`.
+
+Users interact with the factory only. Each duel is a minimal-proxy clone of the
+implementation; the implementation itself is locked (`initialize()` reverts
+"already initialized").
+
+Factory configuration at deployment:
+
+| Parameter | Value |
+|---|---|
+| `approvedStakeToken` | `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` (USDG "Global Dollar", 6 decimals) |
+| `minBuyIn` | `1000000` (1 USDG) |
+| `oracleSigner` | `0xA5C09C06ED6887598e894b211F6dFE55FD80B4b4` |
+| `platformTreasury` | `0x6d0c0Ac0b60B1BE2D60ad4e6AA868D2612fe4f89` |
+| `owner` | `0x9b7016Fe0a8e0d97b0FC6C9Be8AB6b9Cc938651B` (deployer) |
+
+The rewards layer (`CombatRecordNFT`, `RedemptionVault`) is not deployed yet.
 
 ## Architecture overview
 
@@ -288,6 +321,27 @@ token in its own units (e.g. `1000000` = 1 USDC); the script reads the token's
   deploy if it equals the oracle signer (the relayer needs no on-chain role).
 
 The script ends by printing the `NEXT_PUBLIC_*` values to paste into the FE env.
+
+Deploy the rewards layer (`CombatRecordNFT` + `RedemptionVault`), independent of
+the duel contracts. The script deploys the NFT, deploys the vault pointed at it,
+wires `setRedemptionVault`, optionally funds the vault, then hands ownership of
+both to `REWARDS_OWNER`:
+
+```shell
+PRIVATE_KEY=<deployer_key> \
+POINTS_ORACLE_ADDRESS=<the only address allowed to addPoints()> \
+REWARD_TOKEN_ADDRESS=<platform token> \
+TOKENS_PER_POINT_WAD=<reward-token base units per point, e.g. 1000000000000000> \
+REWARDS_OWNER=<multisig> \
+VAULT_FUNDING_AMOUNT=<reward tokens the deployer moves into the vault> \
+  forge script script/DeployRewards.s.sol:DeployRewards --rpc-url <rpc_url> --broadcast
+```
+
+Optional: `VESTING_DURATION_SECONDS` (30-90 days, default 60),
+`ORACLE_SIGNER_ADDRESS` / `RELAYER_ADDRESS` (checked so the points oracle never
+reuses the duel oracle or relayer key), and `DEPLOY_MOCK_REWARD_TOKEN=true` for
+local/testnet runs. The points oracle can mint points to anyone, so it gets its
+own key. An unfunded vault redeems nothing; the script warns if it's left empty.
 
 There is no `Deploy.s.sol`/`DeployDuel.s.sol` equivalent yet for
 `CombatRecordNFT`/`RedemptionVault` — deploy those manually (via `forge
