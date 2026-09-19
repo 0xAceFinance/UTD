@@ -1,8 +1,14 @@
 import { selectTopTen } from "@mcapduel/engine";
-import { DexScreenerSource } from "./dexScreenerSource";
+import { DexScreenerSource, getLivePricing } from "./dexScreenerSource";
 import { connectToDatabase } from "./mongoose";
 import DuelToken from "./models/DuelToken";
 import OracleHealthSample from "./models/OracleHealthSample";
+
+/** Minimum time between re-price passes over today's Top 10 (see repriceTopTen
+ * below). Matches the cadence lib/duelEngine.ts already uses for a live
+ * duel's own market-cap refresh (MIN_SAMPLE_INTERVAL_SEC), so the token list
+ * feels just as live without hammering DexScreener on every page load. */
+export const MIN_REPRICE_INTERVAL_SEC = 20;
 
 /**
  * Runs the real Section 01 scanner (@mcapduel/engine's evaluateGates +
@@ -58,6 +64,48 @@ export async function runDailyScan() {
     await recordOracleHealth(false, (err as Error).message);
     throw err;
   }
+}
+
+/**
+ * Cheap real-time refresh for today's Top 10: re-prices every listed token
+ * against DexScreener (lib/dexScreenerSource.ts::getLivePricing) without
+ * re-running discovery or the safety gates, so the roster stays exactly what
+ * the last full runDailyScan() selected -- only marketCapUsd/liquidityUsd/
+ * volume24hUsd/change24hPct move. Called on a throttle (MIN_REPRICE_INTERVAL_SEC)
+ * from GET /api/duel-tokens, the same self-healing-on-read pattern
+ * app/api/duels/[id]/route.ts uses for a live duel.
+ */
+export async function repriceTopTen(): Promise<{ repriced: number }> {
+  await connectToDatabase();
+
+  const tokens = await DuelToken.find();
+  if (tokens.length === 0) return { repriced: 0 };
+
+  const pricing = await getLivePricing(tokens.map((t) => t.tokenAddress)).catch(() => new Map());
+
+  const now = new Date();
+  let repriced = 0;
+  await Promise.all(
+    tokens.map((token) => {
+      const fresh = pricing.get(token.tokenAddress);
+      if (!fresh) return Promise.resolve();
+      repriced += 1;
+      return DuelToken.updateOne(
+        { _id: token._id },
+        {
+          $set: {
+            marketCapUsd: fresh.marketCapUsd,
+            liquidityUsd: fresh.liquidityUsd,
+            volume24hUsd: fresh.volume24hUsd,
+            change24hPct: fresh.change24hPct,
+            updatedAt: now,
+          },
+        }
+      );
+    })
+  );
+
+  return { repriced };
 }
 
 /**

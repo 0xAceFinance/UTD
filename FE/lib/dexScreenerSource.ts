@@ -180,6 +180,44 @@ export class DexScreenerSource implements DataSource {
   }
 }
 
+export interface LivePricing {
+  marketCapUsd: number;
+  liquidityUsd: number;
+  volume24hUsd: number;
+  change24hPct: number;
+}
+
+/**
+ * Cheap re-price for an already-known set of tokens (e.g. today's Top 10):
+ * just the current marketCap/liquidity/volume/24h-change DexScreener reports
+ * for each address, no discovery and no gate re-evaluation. Deliberately
+ * uses DexScreener's own reported marketCap/fdv directly rather than
+ * re-deriving it from totalSupply -- totalSupply is only needed to convert a
+ * *price* sample into a market cap (engine's marketCapUsd formula) for the
+ * oracle pipeline, and must stay fixed once a duel carries it forward (see
+ * lib/models/DuelToken.ts); this function never touches it. Silently omits
+ * an address DexScreener has no pair for, so callers can leave that token's
+ * last-known numbers in place instead of zeroing them on a transient miss.
+ */
+export async function getLivePricing(addresses: string[]): Promise<Map<string, LivePricing>> {
+  const pairs = await fetchPairsForAddresses(addresses);
+  const best = bestPairPerToken(pairs);
+
+  const pricing = new Map<string, LivePricing>();
+  for (const [address, pair] of best) {
+    const marketCapUsd = pair.marketCap ?? pair.fdv ?? 0;
+    const liquidityUsd = pair.liquidity?.usd ?? 0;
+    if (!marketCapUsd || !liquidityUsd) continue;
+    pricing.set(address, {
+      marketCapUsd,
+      liquidityUsd,
+      volume24hUsd: pair.volume?.h24 ?? 0,
+      change24hPct: pair.priceChange?.h24 ?? 0,
+    });
+  }
+  return pricing;
+}
+
 /**
  * Every real pool DexScreener reports for one token, as raw PoolSamples --
  * this is the multi-pool input the full oracle pipeline

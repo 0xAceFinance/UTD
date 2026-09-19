@@ -28,12 +28,19 @@ export default function CreateDuelPage() {
     const factory = useFactoryState()
 
     useEffect(() => {
-        fetch("/api/duel-tokens")
-            .then((r) => r.json())
-            .then((json) => {
-                if (json.success) setTokens(json.data)
-            })
-            .finally(() => setTokensLoading(false))
+        const load = () =>
+            fetch("/api/duel-tokens")
+                .then((r) => r.json())
+                .then((json) => {
+                    if (json.success) setTokens(json.data)
+                })
+                .finally(() => setTokensLoading(false))
+
+        load()
+        // Re-prices server-side every ~20s; poll so the picker's ranks/#s stay
+        // current without disturbing tokenA/tokenB (keyed by symbol, not index).
+        const id = setInterval(load, 20_000)
+        return () => clearInterval(id)
     }, [])
 
     function pickToken(symbol: string) {
