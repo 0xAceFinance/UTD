@@ -26,6 +26,7 @@ import {
     withdrawOwedOnChain,
 } from "@/lib/duelContract"
 import { SideTag } from "../../components/duel/SideTag"
+import { getFriendlyErrorMessage } from "@/lib/walletErrors"
 
 import { DuelDTO, canForceRefund, formatUsd, pctReturn } from "../../components/duel/types"
 
@@ -101,7 +102,7 @@ export default function DuelDetailPage() {
                 setDuel(json.data)
             }
         } catch (err) {
-            toast.error((err as Error).message || "Something went wrong cancelling the duel.")
+            toast.error(getFriendlyErrorMessage(err, "Something went wrong cancelling the duel."))
         } finally {
             setCancelling(false)
         }
@@ -127,7 +128,7 @@ export default function DuelDetailPage() {
                 setDuel(json.data)
             }
         } catch (err) {
-            toast.error((err as Error).message || "Something went wrong reclaiming the stake.")
+            toast.error(getFriendlyErrorMessage(err, "Something went wrong reclaiming the stake."))
         } finally {
             setReclaiming(false)
         }
@@ -159,7 +160,7 @@ export default function DuelDetailPage() {
                 setDuel(json.data)
             }
         } catch (err) {
-            toast.error((err as Error).message || "Something went wrong settling the duel.")
+            toast.error(getFriendlyErrorMessage(err, "Something went wrong settling the duel."))
         } finally {
             setClaiming(false)
         }
@@ -185,7 +186,7 @@ export default function DuelDetailPage() {
                 setDuel(json.data)
             }
         } catch (err) {
-            toast.error((err as Error).message || "Something went wrong refunding the duel.")
+            toast.error(getFriendlyErrorMessage(err, "Something went wrong refunding the duel."))
         } finally {
             setForceRefunding(false)
         }
@@ -654,7 +655,7 @@ function OwedWithdraw({ escrowAddress, wallet }: { escrowAddress: string; wallet
             toast.success("Withdrawn to your wallet.")
             await refresh()
         } catch (err) {
-            toast.error((err as Error).message || "Withdraw failed. The token may still be blocking this transfer.")
+            toast.error(getFriendlyErrorMessage(err, "Withdraw failed. The token may still be blocking this transfer."))
         } finally {
             setWithdrawing(false)
         }

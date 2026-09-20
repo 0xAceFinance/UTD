@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { useWallet } from "@/hooks/useWallet"
 import { joinDuelOnChain } from "@/lib/duelContract"
+import { getFriendlyErrorMessage } from "@/lib/walletErrors"
 import { useFactoryState } from "@/hooks/useFactoryState"
 import { PausedBanner } from "./duel/PausedBanner"
 import { SideTag, StatusTag, TierBadge } from "./duel/SideTag"
@@ -150,7 +151,7 @@ export default function Dashboard() {
             toast.success("Joined. The duel is live.")
             router.push(`/duels/${duelId}`)
         } catch (err) {
-            toast.error((err as Error).message || "Something went wrong joining the duel.")
+            toast.error(getFriendlyErrorMessage(err, "Something went wrong joining the duel."))
         } finally {
             setJoiningId(null)
         }

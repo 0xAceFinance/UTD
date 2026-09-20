@@ -44,6 +44,63 @@ export function getStakeTokenDecimals(): Promise<number> {
     return stakeTokenDecimals;
 }
 
+let stakeTokenSymbol: Promise<string> | undefined;
+
+/** e.g. "USDG" on production, "mUSD" on the local MockERC20. Cached like decimals above. */
+export function getStakeTokenSymbol(): Promise<string> {
+    stakeTokenSymbol ??= (
+        readContract(wagmiConfig, {
+            chainId: CONTRACTS.chainId,
+            address: CONTRACTS.stakeToken,
+            abi: Erc20Abi,
+            functionName: 'symbol',
+        }) as Promise<string>
+    ).catch((err) => {
+        stakeTokenSymbol = undefined;
+        throw err;
+    });
+    return stakeTokenSymbol;
+}
+
+export async function getStakeTokenBalanceUsd(wallet: `0x${string}`): Promise<number> {
+    const [balanceWei, decimals] = await Promise.all([
+        readContract(wagmiConfig, {
+            chainId: CONTRACTS.chainId,
+            address: CONTRACTS.stakeToken,
+            abi: Erc20Abi,
+            functionName: 'balanceOf',
+            args: [wallet],
+        }) as Promise<bigint>,
+        getStakeTokenDecimals(),
+    ]);
+    return Number(formatUnits(balanceWei, decimals));
+}
+
+/**
+ * Thrown instead of ever asking for a wallet signature we already know will
+ * fail on-chain -- lets the UI show a clear "top up / swap" message instead
+ * of the wallet's own scary pre-flight gas-estimation warning (which is what
+ * a bare `transferFrom` revert from the stake token looks like to the user).
+ */
+export class InsufficientStakeBalanceError extends Error {
+    constructor(
+        public readonly neededUsd: number,
+        public readonly balanceUsd: number,
+        public readonly symbol: string
+    ) {
+        super(
+            `You need $${neededUsd.toFixed(2)} ${symbol} for this stake, but this wallet only has ` +
+                `$${balanceUsd.toFixed(2)} ${symbol}. Add or swap into ${symbol} and try again.`
+        );
+        this.name = 'InsufficientStakeBalanceError';
+    }
+}
+
+async function requireStakeBalance(wallet: `0x${string}`, buyInUsd: number): Promise<void> {
+    const [balanceUsd, symbol] = await Promise.all([getStakeTokenBalanceUsd(wallet), getStakeTokenSymbol()]);
+    if (balanceUsd < buyInUsd) throw new InsufficientStakeBalanceError(buyInUsd, balanceUsd, symbol);
+}
+
 /**
  * Live factory gates the UI must respect before asking for a signature:
  * createDuel()/joinDuel() revert while paused, and createDuel() reverts
@@ -100,6 +157,7 @@ export async function createDuelOnChain(params: {
     const { paused, minBuyInUsd } = await getFactoryState();
     if (paused) throw new Error('Duels are paused right now. Try again later.');
     if (params.buyInUsd < minBuyInUsd) throw new Error(`Minimum buy-in is $${minBuyInUsd}.`);
+    await requireStakeBalance(params.creator, params.buyInUsd);
 
     const amountWei = parseUnits(String(params.buyInUsd), await getStakeTokenDecimals());
     await ensureApproval(params.creator, amountWei);
@@ -121,6 +179,7 @@ export async function joinDuelOnChain(
     buyInUsd: number
 ): Promise<`0x${string}`> {
     if ((await getFactoryState()).paused) throw new Error('Duels are paused right now. Try again later.');
+    await requireStakeBalance(opponent, buyInUsd);
 
     const amountWei = parseUnits(String(buyInUsd), await getStakeTokenDecimals());
     await ensureApproval(opponent, amountWei);

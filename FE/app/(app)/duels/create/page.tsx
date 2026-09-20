@@ -6,6 +6,7 @@ import { Slider } from "@/components/ui/slider"
 import { toast } from "sonner"
 import { useWallet } from "@/hooks/useWallet"
 import { createDuelOnChain } from "@/lib/duelContract"
+import { getFriendlyErrorMessage } from "@/lib/walletErrors"
 import { useFactoryState } from "@/hooks/useFactoryState"
 import { DuelTokenDTO } from "../../components/duel/types"
 import { PausedBanner } from "../../components/duel/PausedBanner"
@@ -115,7 +116,7 @@ export default function CreateDuelPage() {
             toast.success("Lobby created. Waiting for an opponent.")
             router.push(`/duels/${json.data._id}`)
         } catch (err) {
-            toast.error((err as Error).message || "Something went wrong creating the duel.")
+            toast.error(getFriendlyErrorMessage(err, "Something went wrong creating the duel."))
         } finally {
             setSubmitting(false)
             setStage("idle")
