@@ -158,9 +158,24 @@ real private key into a chat/AI tool.
 gcloud run deploy utd-backend \
   --source . \
   --allow-unauthenticated \
-  --set-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0x65f58fA80dd62460980B14979f062F1E67D35Cff,NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
+  --set-build-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E,NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
+  --set-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E,NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
   --set-secrets "ORACLE_SIGNER_PRIVATE_KEY=ORACLE_SIGNER_PRIVATE_KEY:latest,RELAYER_PRIVATE_KEY=RELAYER_PRIVATE_KEY:latest,MONGODB_URI=MONGODB_URI:latest,CRON_SECRET=CRON_SECRET:latest,ADMIN_API_SECRET=ADMIN_API_SECRET:latest"
 ```
+
+**`--set-build-env-vars` is not optional here, and it's easy to miss.** Next.js inlines every
+`NEXT_PUBLIC_*` var into the compiled output at `next build` time — including in server-only code
+paths, since shared modules like `config/contracts.ts` are also imported by client components.
+`--set-env-vars` only configures the *deployed revision's* runtime environment, which doesn't
+exist yet during the build Cloud Build just ran — so without `--set-build-env-vars` (which Cloud
+Run forwards into the Dockerfile's build stage as Docker build args, matching the `ARG`s declared
+in `FE/Dockerfile`), the backend silently compiles with `config/contracts.ts`'s local-dev fallback
+values (chain `31337`, empty contract addresses) no matter what `--set-env-vars` says. The
+symptom is exactly the kind of bug this produces: `lib/chainVerify.ts` functions like
+`verifyDuelCreated` compare `event.address` against the backend's own (wrong) compiled
+`CONTRACTS.battleEscrowFactory` and throw `"... event not found"` even for a perfectly valid
+transaction, because the backend is checking against the wrong address. Both flags carry the same
+values for now (`--set-env-vars` doesn't hurt and covers any future runtime-only reads).
 
 `--allow-unauthenticated` is required — Vercel's proxy and end users both
 need to reach this service without a GCP identity token. The route-level
@@ -348,6 +363,7 @@ duels:
 | Geofence/sybil checks seem to never trigger | One of the two header-forwarding checks in the verification checklist is failing silently — confirm with `curl`, not just app behavior |
 | `settle()`/`voidActive()` reverts "invalid oracle signature" right after a signer rotation | The duel being settled was activated under the *old* signer; confirm `ORACLE_SIGNER_PRIVATE_KEY_PREVIOUS` is still set and matches |
 | New duel creation blocked with "New duels are paused while we recover the price feed" | The scan cron isn't running/succeeding — check `OracleHealthSample` and the scan job's Cloud Scheduler history |
+| Duel creation fails right after wallet confirmation with "DuelCreated event not found for this wallet in that transaction" | The Cloud Run backend was built without `--set-build-env-vars` (or with stale values in it) — its compiled `CONTRACTS.battleEscrowFactory` doesn't match the factory address the transaction actually used. Redeploy with `--set-build-env-vars` set to the *current* factory/stake-token/chain values (§3), not just `--set-env-vars`. |
 
 ---
 

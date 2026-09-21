@@ -41,13 +41,18 @@ contracts, and verification details: [`Contracts/README.md`](Contracts/README.md
 
 | Contract | Address |
 |---|---|
-| `BattleEscrowFactory` | [`0x65f58fA80dd62460980B14979f062F1E67D35Cff`](https://robinhoodchain.blockscout.com/address/0x65f58fA80dd62460980B14979f062F1E67D35Cff) |
-| `BattleEscrow` (implementation) | [`0x42839837874979e50f019c5C23154578216fa72D`](https://robinhoodchain.blockscout.com/address/0x42839837874979e50f019c5C23154578216fa72D) |
+| `BattleEscrowFactory` | [`0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E`](https://robinhoodchain.blockscout.com/address/0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E) |
+| `BattleEscrow` (implementation) | [`0x3028ea8aDA73b722bB271797b0Ca87FC28427a62`](https://robinhoodchain.blockscout.com/address/0x3028ea8aDA73b722bB271797b0Ca87FC28427a62) |
 | Stake token (USDG "Global Dollar", 6 decimals) | [`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`](https://robinhoodchain.blockscout.com/address/0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168) |
 
 Duels run exactly 5, 10, 15 or 20 minutes; an unmatched lobby stays open 5 minutes;
-minimum buy-in is 1 USDG. The rewards layer (`CombatRecordNFT`, `RedemptionVault`) is
-**deliberately not deployed** — points and tiers are DB-only for now, see
+minimum buy-in is 1 USDG. Verified on-chain (`oracleSigner`, `platformTreasury`,
+`approvedStakeToken`, `minBuyIn`, `winnerBps=9000`, `maxReferrerBps=500`, `owner`, `paused=false`)
+and source-verified on Sourcify (`exact_match`, creation + runtime) as of 2026-09-22 — see
+[`Contracts/README.md`](Contracts/README.md#deployments) for the full record, including why the
+previous deployment was superseded (a real payout-repricing vulnerability, not routine tuning) and
+an unresolved duel stuck on it that still needs attention. The rewards layer (`CombatRecordNFT`,
+`RedemptionVault`) is **deliberately not deployed** — points and tiers are DB-only for now, see
 [Known gaps](#known-gaps--open-items).
 
 Public env for this deployment:
@@ -55,7 +60,7 @@ Public env for this deployment:
 ```
 NEXT_PUBLIC_CHAIN_ID=4663
 NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com
-NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0x65f58fA80dd62460980B14979f062F1E67D35Cff
+NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E
 NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168
 ```
 
@@ -360,6 +365,12 @@ cd Contracts && forge test  # Foundry — happy-path + adversarial contract test
 
 ## Known gaps / open items
 
+- **Migration off the previous factory (`0x65f58fA80dd62460980B14979f062F1E67D35Cff`) is
+  incomplete.** It has 5 duels on it (not the usual 0 for a superseded deployment), and as of
+  2026-09-22 one of them (`0x35EB4C03C56740364AD6a5767c74F3F625c29b0a`) is `Active`, ~48h past its
+  `endTime`, unsettled, and already past its 24h `refundStale()` window. Confirm the backend/cron
+  is pointed at the intended factory and either settle or `refundStale()` this duel before
+  retiring the old factory from any monitoring. See [`Contracts/README.md`](Contracts/README.md#deployments).
 - **On-chain rewards are deliberately deferred.** `CombatRecordNFT`/`RedemptionVault`
   are built and tested but not deployed; points/tiers are DB-only
   (`CombatRecord`) for now — this is a decision, not an oversight, and there is no

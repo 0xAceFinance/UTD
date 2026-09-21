@@ -28,28 +28,39 @@ described in this doc.
 
 ### Robinhood Chain mainnet (chain id 4663)
 
-Duel escrow system, deployed with `script/DeployDuel.s.sol`
-(broadcast record: `broadcast/DeployDuel.s.sol/4663/run-latest.json`).
-Duels last exactly 5, 10, 15 or 20 minutes; an unmatched lobby stays open for 5 minutes.
+Duel escrow system, deployed with `script/DeployDuel.s.sol`. Duels last exactly 5, 10, 15 or 20
+minutes; an unmatched lobby stays open for 5 minutes.
 
-| Contract | Address | Deploy tx | Block |
-|---|---|---|---|
-| `BattleEscrowFactory` | [`0x65f58fA80dd62460980B14979f062F1E67D35Cff`](https://robinhoodchain.blockscout.com/address/0x65f58fA80dd62460980B14979f062F1E67D35Cff) | `0x45590d9bd416ca82a6b0ce8663ebef8ad1c945819795e3556e07b295037b5a37` | 67296858 |
-| `BattleEscrow` (implementation) | [`0x42839837874979e50f019c5C23154578216fa72D`](https://robinhoodchain.blockscout.com/address/0x42839837874979e50f019c5C23154578216fa72D) | `0xe2cdc7a709af4fd9975a907ff8586a36274c9685f586eefe9aa850f7d72956b1` | 67296825 |
+| Contract | Address |
+|---|---|
+| `BattleEscrowFactory` | [`0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E`](https://robinhoodchain.blockscout.com/address/0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E) |
+| `BattleEscrow` (implementation) | [`0x3028ea8aDA73b722bB271797b0Ca87FC28427a62`](https://robinhoodchain.blockscout.com/address/0x3028ea8aDA73b722bB271797b0Ca87FC28427a62) |
+
+Deploy tx/block are not recorded here — this chain's RPC has no historical/archive state
+(`eth_getCode`/`eth_call` at a past block errors), so they couldn't be recovered after the fact
+from just the addresses; capture the `forge script ... --broadcast` output at deploy time going
+forward, and add it here if you have it.
 
 Both contracts are source-verified on Sourcify with an **exact match** (creation and
-runtime bytecode, solc 0.8.30), which Blockscout also displays:
-[factory](https://repo.sourcify.dev/4663/0x65f58fA80dd62460980B14979f062F1E67D35Cff),
-[implementation](https://repo.sourcify.dev/4663/0x42839837874979e50f019c5C23154578216fa72D).
+runtime bytecode, solc 0.8.30), verified 2026-09-21T20:57Z:
+[factory](https://repo.sourcify.dev/4663/0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E),
+[implementation](https://repo.sourcify.dev/4663/0x3028ea8aDA73b722bB271797b0Ca87FC28427a62).
 The chain's official explorer is Blockscout at `robinhoodchain.blockscout.com`.
 
-**Superseded, do not use.** Both were replaced before any duel was created on them
-(`allDuelsLength() == 0`):
+On-chain state independently re-verified 2026-09-22 via `cast call` against
+`https://rpc.mainnet.chain.robinhood.com`: `oracleSigner`, `platformTreasury`,
+`approvedStakeToken`, `minBuyIn`, `winnerBps=9000`, `maxReferrerBps=500` all match the table
+below; `owner` = deployer; `paused = false`; `allDuelsLength = 0` (fresh); `escrowImplementation`
+on the factory correctly points at the implementation address above; the implementation's
+`initialize()` reverts `"already initialized"`.
+
+**Superseded, do not use for new duels:**
 
 | Deployment | Factory | Implementation | Why replaced |
 |---|---|---|---|
-| 1st (blocks 67027457-67027489) | `0x32aB0586A99e7b7246225689dD6847a77E1d946D` | `0x0400babC9C034bba510DDe52EB829F87739C5e41` | 15-40 min durations |
-| 2nd (blocks 67283755-67283788) | `0xf56eED09448fE1C23009DA6D0f00DE1A927A862f` | `0x3F0F175EDBFb9688dC77ee0c6474030147784bCC` | 60 min open window |
+| 3rd (block 67296858/67296825) | `0x65f58fA80dd62460980B14979f062F1E67D35Cff` | `0x42839837874979e50f019c5C23154578216fa72D` | **Security fix, not routine tuning.** This deployment reads `winnerBps`/`maxReferrerBps`/`platformTreasury` *live* from the factory at `settle()` time instead of snapshotting them at `activate()` — an owner could reprice or redirect an already-staked pot mid-flight (audit finding, fixed in commit `a422da1`, "freeze payout terms per duel, floor the winner at 80%"). **Has 5 duels on it** (not 0 — unlike the two below). As of 2026-09-22: 3 `Refunded` (normal expired-lobby churn), 1 `Settled`, and **1 (`0x35EB4C03C56740364AD6a5767c74F3F625c29b0a`) still `Active`, ~48h past its `endTime` and past its 24h `refundStale()` window** — needs manual settlement or `refundStale()`; see [`../README.md`'s open items](../README.md#known-gaps--open-items). |
+| 2nd (blocks 67283755-67283788) | `0xf56eED09448fE1C23009DA6D0f00DE1A927A862f` | `0x3F0F175EDBFb9688dC77ee0c6474030147784bCC` | 60 min open window, 0 duels |
+| 1st (blocks 67027457-67027489) | `0x32aB0586A99e7b7246225689dD6847a77E1d946D` | `0x0400babC9C034bba510DDe52EB829F87739C5e41` | 15-40 min durations, 0 duels |
 
 Users interact with the factory only. Each duel is a minimal-proxy clone of the
 implementation; the implementation itself is locked (`initialize()` reverts
@@ -61,6 +72,8 @@ Factory configuration at deployment:
 |---|---|
 | `approvedStakeToken` | `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` (USDG "Global Dollar", 6 decimals) |
 | `minBuyIn` | `1000000` (1 USDG) |
+| `winnerBps` | `9000` (90%) |
+| `maxReferrerBps` | `500` (5%) |
 | `oracleSigner` | `0xA5C09C06ED6887598e894b211F6dFE55FD80B4b4` |
 | `platformTreasury` | `0x6d0c0Ac0b60B1BE2D60ad4e6AA868D2612fe4f89` |
 | `owner` | `0x9b7016Fe0a8e0d97b0FC6C9Be8AB6b9Cc938651B` (deployer) |
