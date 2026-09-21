@@ -7,6 +7,7 @@ import { Gift, Share2 } from "lucide-react"
 import { useWallet } from "@/hooks/useWallet"
 import { useAirdrop } from "./airdrop/useAirdrop"
 import { routeTitle } from "./nav"
+import { SoundToggle } from "./SoundToggle"
 
 function WalletButton() {
     return (
@@ -120,6 +121,7 @@ export default function Header() {
                 </div>
 
                 <div className="flex flex-none items-center gap-2">
+                    <SoundToggle />
                     <AirdropButton active={pathname.startsWith("/airdrop")} />
                     <ReferralButton active={pathname.startsWith("/referrals")} />
                     <WalletButton />

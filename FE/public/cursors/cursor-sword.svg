@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28">
+  <!-- Outer black outline -->
+  <path d="M2 0 L8 0 L15 7 L18 4 L21 7 L18 10 L25 17 L26 22 L22 26 L17 25 L10 18 L7 21 L4 18 L7 15 L0 8 Z" fill="#060907"/>
+  <!-- Neon Acid Blade -->
+  <path d="M3 1 L7 1 L14 8 L8 14 L1 7 Z" fill="#2be884"/>
+  <path d="M4 2 L6 2 L12 8 L8 12 L2 6 Z" fill="#ffffff" opacity="0.8"/>
+  <!-- Hot Pink Crossguard -->
+  <path d="M13 7 L19 5 L17 9 L15 11 L11 15 L9 17 L5 19 L7 13 Z" fill="#ff3d71"/>
+  <!-- Electric Cyan Grip -->
+  <line x1="14" y1="14" x2="21" y2="21" stroke="#35c6ff" stroke-width="2.5" stroke-linecap="square"/>
+  <!-- Pommel Gem -->
+  <circle cx="22.5" cy="22.5" r="2.5" fill="#2be884" stroke="#060907" stroke-width="1"/>
+</svg>

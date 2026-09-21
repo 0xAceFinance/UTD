@@ -543,3 +543,17 @@
   background-size: 22px 22px;
 }
 
+
+
+/* --- UTD Retro-Arcade Fun Mouse Cursors --- */
+html, body {
+  cursor: url('/cursors/cursor-default.svg') 1 1, auto;
+}
+
+a, button, [role="button"], input[type="button"], input[type="submit"], select, .utd-btn, .app-chip, [role="tab"], [tabindex="0"] {
+  cursor: url('/cursors/cursor-sword.svg') 2 2, pointer !important;
+}
+
+.cursor-crosshair, .cursor-target {
+  cursor: url('/cursors/cursor-crosshair.svg') 14 14, crosshair !important;
+}
