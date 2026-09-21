@@ -13,10 +13,12 @@ export interface CreateLobbyInput {
 }
 
 export function createLobby(input: CreateLobbyInput): Lobby {
-  if (input.durationSeconds < LOBBY_CONFIG.minDurationSeconds || input.durationSeconds > LOBBY_CONFIG.maxDurationSeconds) {
-    throw new Error(
-      `duration must be between ${LOBBY_CONFIG.minDurationSeconds / 60} and ${LOBBY_CONFIG.maxDurationSeconds / 60} minutes`
-    );
+  if (
+    input.durationSeconds < LOBBY_CONFIG.minDurationSeconds ||
+    input.durationSeconds > LOBBY_CONFIG.maxDurationSeconds ||
+    input.durationSeconds % LOBBY_CONFIG.durationStepSeconds !== 0
+  ) {
+    throw new Error("duration must be 5, 10, 15 or 20 minutes");
   }
   return {
     id: input.id,

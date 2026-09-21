@@ -42,6 +42,15 @@ function baseLobby(overrides: Partial<Parameters<typeof createLobby>[0]> = {}) {
   });
 }
 
+describe("lobby state machine — open window", () => {
+  it("gives an unmatched lobby exactly 5 minutes to find an opponent", () => {
+    const lobby = baseLobby();
+    expect(lobby.openDeadlineSec).toBe(NOW + 5 * 60);
+    expect(() => submitJoin(lobby, "0xOpponent", NOW + 5 * 60)).not.toThrow();
+    expect(() => submitJoin(lobby, "0xOpponent", NOW + 5 * 60 + 1)).toThrow("open window has already passed");
+  });
+});
+
 describe("lobby state machine — the happy path", () => {
   it("walks OPEN -> MATCHED -> LIVE -> SETTLING -> SETTLED", () => {
     let lobby = baseLobby();
@@ -190,8 +199,15 @@ describe("lobby state machine — invalid transitions are rejected, not silently
   });
 
   it("rejects a duration outside the 5-20 minute window", () => {
-    expect(() => baseLobby({ durationSeconds: 4 * 60 })).toThrow("between 5 and 20 minutes");
-    expect(() => baseLobby({ durationSeconds: 25 * 60 })).toThrow("between 5 and 20 minutes");
+    expect(() => baseLobby({ durationSeconds: 4 * 60 })).toThrow("5, 10, 15 or 20 minutes");
+    expect(() => baseLobby({ durationSeconds: 25 * 60 })).toThrow("5, 10, 15 or 20 minutes");
+  });
+
+  it("accepts exactly 5, 10, 15 and 20 minutes, and nothing between them", () => {
+    for (const m of [5, 10, 15, 20]) expect(() => baseLobby({ durationSeconds: m * 60 })).not.toThrow();
+    for (const d of [7 * 60, 12 * 60 + 30, 19 * 60]) {
+      expect(() => baseLobby({ durationSeconds: d })).toThrow("5, 10, 15 or 20 minutes");
+    }
   });
 
   it("refuses to let the creator join their own lobby", () => {
@@ -214,8 +230,8 @@ describe("lobby state machine — boundary conditions on timestamps and duration
   });
 
   it("rejects a duration one second outside either bound", () => {
-    expect(() => baseLobby({ durationSeconds: 5 * 60 - 1 })).toThrow("between 5 and 20 minutes");
-    expect(() => baseLobby({ durationSeconds: 20 * 60 + 1 })).toThrow("between 5 and 20 minutes");
+    expect(() => baseLobby({ durationSeconds: 5 * 60 - 1 })).toThrow("5, 10, 15 or 20 minutes");
+    expect(() => baseLobby({ durationSeconds: 20 * 60 + 1 })).toThrow("5, 10, 15 or 20 minutes");
   });
 
   it("allows joining exactly at the open deadline (inclusive boundary)", () => {
@@ -228,13 +244,14 @@ describe("lobby state machine — boundary conditions on timestamps and duration
     expect(() => expire(lobby, lobby.openDeadlineSec)).toThrow("has not passed yet");
   });
 
-  it("fuzzes duration bounds across the boundary: throws iff outside [min, max] inclusive", () => {
+  it("fuzzes durations: throws iff not a 5-minute step within [5, 20] minutes", () => {
     const rng = mulberry32(42);
     const min = 5 * 60;
     const max = 20 * 60;
     for (let i = 0; i < 300; i++) {
-      const d = Math.floor(rng() * (max - min + 200)) + (min - 100);
-      const shouldThrow = d < min || d > max;
+      // Bias half the draws onto exact 5-minute steps so the accepted path is exercised too.
+      const d = i % 2 === 0 ? Math.round((rng() * 30) / 5) * 5 * 60 : Math.floor(rng() * (max - min + 200)) + (min - 100);
+      const shouldThrow = d < min || d > max || d % 300 !== 0;
       if (shouldThrow) {
         expect(() => baseLobby({ durationSeconds: d })).toThrow();
       } else {

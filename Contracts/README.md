@@ -16,9 +16,51 @@ the points/rewards layer.
 > (`TokenFactory`/`PumpToken`/`PumpPool`) that earlier existed in this repo
 > have been removed as out of scope; tokens duelled here are discovered from
 > the open market by the backend's `engine` package, not launched by this
-> protocol. No contract addresses are stated below as live/deployed — the
-> only broadcast records present under `broadcast/` are local Anvil runs
-> (chain id 31337), not a real network deployment.
+> protocol. The only live deployment is the one listed under
+> [Deployments](#deployments) below.
+
+## Deployments
+
+### Robinhood Chain mainnet (chain id 4663)
+
+Duel escrow system, deployed with `script/DeployDuel.s.sol`
+(broadcast record: `broadcast/DeployDuel.s.sol/4663/run-latest.json`).
+Duels last exactly 5, 10, 15 or 20 minutes; an unmatched lobby stays open for 5 minutes.
+
+| Contract | Address | Deploy tx | Block |
+|---|---|---|---|
+| `BattleEscrowFactory` | [`0x65f58fA80dd62460980B14979f062F1E67D35Cff`](https://robinhoodchain.blockscout.com/address/0x65f58fA80dd62460980B14979f062F1E67D35Cff) | `0x45590d9bd416ca82a6b0ce8663ebef8ad1c945819795e3556e07b295037b5a37` | 67296858 |
+| `BattleEscrow` (implementation) | [`0x42839837874979e50f019c5C23154578216fa72D`](https://robinhoodchain.blockscout.com/address/0x42839837874979e50f019c5C23154578216fa72D) | `0xe2cdc7a709af4fd9975a907ff8586a36274c9685f586eefe9aa850f7d72956b1` | 67296825 |
+
+Both contracts are source-verified on Sourcify with an **exact match** (creation and
+runtime bytecode, solc 0.8.30), which Blockscout also displays:
+[factory](https://repo.sourcify.dev/4663/0x65f58fA80dd62460980B14979f062F1E67D35Cff),
+[implementation](https://repo.sourcify.dev/4663/0x42839837874979e50f019c5C23154578216fa72D).
+The chain's official explorer is Blockscout at `robinhoodchain.blockscout.com`.
+
+**Superseded, do not use.** Both were replaced before any duel was created on them
+(`allDuelsLength() == 0`):
+
+| Deployment | Factory | Implementation | Why replaced |
+|---|---|---|---|
+| 1st (blocks 67027457-67027489) | `0x32aB0586A99e7b7246225689dD6847a77E1d946D` | `0x0400babC9C034bba510DDe52EB829F87739C5e41` | 15-40 min durations |
+| 2nd (blocks 67283755-67283788) | `0xf56eED09448fE1C23009DA6D0f00DE1A927A862f` | `0x3F0F175EDBFb9688dC77ee0c6474030147784bCC` | 60 min open window |
+
+Users interact with the factory only. Each duel is a minimal-proxy clone of the
+implementation; the implementation itself is locked (`initialize()` reverts
+"already initialized").
+
+Factory configuration at deployment:
+
+| Parameter | Value |
+|---|---|
+| `approvedStakeToken` | `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` (USDG "Global Dollar", 6 decimals) |
+| `minBuyIn` | `1000000` (1 USDG) |
+| `oracleSigner` | `0xA5C09C06ED6887598e894b211F6dFE55FD80B4b4` |
+| `platformTreasury` | `0x6d0c0Ac0b60B1BE2D60ad4e6AA868D2612fe4f89` |
+| `owner` | `0x9b7016Fe0a8e0d97b0FC6C9Be8AB6b9Cc938651B` (deployer) |
+
+The rewards layer (`CombatRecordNFT`, `RedemptionVault`) is not deployed yet.
 
 ## Architecture overview
 
@@ -70,7 +112,7 @@ Refunded` (via `cancel`/`expire`), or `Active -> Refunded` (via
   tokenASymbol, tokenBSymbol) external` — callable exactly once per clone
   (guarded by `initialized`); asserts the creator's stake already landed in
   the clone (the factory transfers it in the same transaction), then opens a
-  `MAX_OPEN_WINDOW = 60 minutes` matchmaking window.
+  `MAX_OPEN_WINDOW = 5 minutes` matchmaking window.
 - `joinTerms() external view returns (address stakeToken, uint256 buyIn)` —
   read by the factory so `joinDuel` knows how much to pull from the opponent.
 - `activate(address opponent) external` — `onlyFactory`; requires the clone
@@ -126,7 +168,7 @@ implementation.
   approvedStakeToken` (the one stake token this factory accepts — blocks
   farming points with a self-minted worthless token, or a rebasing/fee-taking
   token that could leave payouts stuck), `creatorSide in {0,1}`, and
-  `durationSeconds in [MIN_DURATION=15min, MAX_DURATION=40min]`, clones the
+  `durationSeconds` is one of 5, 10, 15 or 20 minutes (`MIN_DURATION=5min`, `MAX_DURATION=20min`, `DURATION_STEP=5min`), clones the
   implementation, pulls the creator's stake straight into the new clone, then
   calls `initialize` on it. Registers the clone in `isDuel`.
 - `joinDuel(address duel)` / `cancelDuel(address duel)` /
@@ -203,7 +245,7 @@ bounded regardless of how many points a wallet has banked.
    factory reads `joinTerms()` off the clone, pulls the same `buyIn` from the
    opponent into the clone, then calls `activate(opponent)`, which flips the
    clone to `Active` and fixes `startTime`/`endTime = startTime +
-   durationSeconds` (15-40 minutes, enforced at creation).
+   durationSeconds` (5, 10, 15 or 20 minutes, enforced at creation).
 3. **No-match path.** If nobody joins before the 60-minute open window
    elapses, anyone can call `BattleEscrowFactory.expireDuel(duel)`
    (permissionless) to refund the creator and set `status = Refunded`.
@@ -288,6 +330,27 @@ token in its own units (e.g. `1000000` = 1 USDC); the script reads the token's
   deploy if it equals the oracle signer (the relayer needs no on-chain role).
 
 The script ends by printing the `NEXT_PUBLIC_*` values to paste into the FE env.
+
+Deploy the rewards layer (`CombatRecordNFT` + `RedemptionVault`), independent of
+the duel contracts. The script deploys the NFT, deploys the vault pointed at it,
+wires `setRedemptionVault`, optionally funds the vault, then hands ownership of
+both to `REWARDS_OWNER`:
+
+```shell
+PRIVATE_KEY=<deployer_key> \
+POINTS_ORACLE_ADDRESS=<the only address allowed to addPoints()> \
+REWARD_TOKEN_ADDRESS=<platform token> \
+TOKENS_PER_POINT_WAD=<reward-token base units per point, e.g. 1000000000000000> \
+REWARDS_OWNER=<multisig> \
+VAULT_FUNDING_AMOUNT=<reward tokens the deployer moves into the vault> \
+  forge script script/DeployRewards.s.sol:DeployRewards --rpc-url <rpc_url> --broadcast
+```
+
+Optional: `VESTING_DURATION_SECONDS` (30-90 days, default 60),
+`ORACLE_SIGNER_ADDRESS` / `RELAYER_ADDRESS` (checked so the points oracle never
+reuses the duel oracle or relayer key), and `DEPLOY_MOCK_REWARD_TOKEN=true` for
+local/testnet runs. The points oracle can mint points to anyone, so it gets its
+own key. An unfunded vault redeems nothing; the script warns if it's left empty.
 
 There is no `Deploy.s.sol`/`DeployDuel.s.sol` equivalent yet for
 `CombatRecordNFT`/`RedemptionVault` — deploy those manually (via `forge

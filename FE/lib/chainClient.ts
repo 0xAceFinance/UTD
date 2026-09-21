@@ -36,6 +36,12 @@ export async function readSettlementSigner(escrow: `0x${string}`): Promise<`0x${
     })) as `0x${string}`;
 }
 
+/** When the lobby stops accepting an opponent -- set by the escrow at creation from block time. */
+export async function readEscrowOpenDeadline(escrow: `0x${string}`): Promise<Date> {
+    const sec = await publicClient.readContract({ address: escrow, abi: BattleEscrowAbi, functionName: 'openDeadline' });
+    return new Date(Number(sec) * 1000);
+}
+
 export async function readFactoryPaused(): Promise<boolean> {
     return (await publicClient.readContract({
         address: CONTRACTS.battleEscrowFactory,

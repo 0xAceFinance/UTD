@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { formatUnits } from 'viem';
-import { readStakeTokenDecimals } from '@/lib/chainClient';
+import { readStakeTokenDecimals, readEscrowOpenDeadline } from '@/lib/chainClient';
 import { createLobby } from '@mcapduel/matchmaking';
 import { connectToDatabase } from '@/lib/mongoose';
 import Duel from '@/lib/models/Duel';
@@ -149,7 +149,10 @@ export async function POST(req: NextRequest) {
             buyInUsd,
             durationSeconds: lobby.durationSeconds,
             createdAt: new Date(lobby.createdAtSec * 1000),
-            openDeadline: new Date(lobby.openDeadlineSec * 1000),
+            // The escrow's own deadline, not our clock: the window is only 5 min, so
+            // the gap between the tx landing and this request would otherwise let the
+            // UI offer "Join" after the contract has already stopped accepting it.
+            openDeadline: await readEscrowOpenDeadline(escrowAddress),
         });
 
         // Real signals for @mcapduel/risk's wallet-clustering check at

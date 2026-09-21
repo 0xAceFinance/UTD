@@ -29,6 +29,7 @@ import { POST as confirmSettlementRoute } from '@/app/api/duels/[id]/confirm-set
 import { POST as refundStaleRoute } from '@/app/api/duels/[id]/refund-stale/route';
 import Duel from '@/lib/models/Duel';
 import DuelToken from '@/lib/models/DuelToken';
+import { readEscrowOpenDeadline } from '@/lib/chainClient';
 import OracleHealthSample from '@/lib/models/OracleHealthSample';
 import CombatRecord from '@/lib/models/CombatRecord';
 import { ensureDbConnected, clearDatabase } from '../helpers/db';
@@ -81,7 +82,7 @@ function mockCreatedEvent(
     event: {
       buyIn: overrides.buyIn ?? 100_000_000_000_000_000_000n, // 100e18
       creatorSide: overrides.creatorSide ?? 0,
-      durationSeconds: overrides.durationSeconds ?? 1_200n, // 20 minutes -- within matchmaking's 5-20min bounds
+      durationSeconds: overrides.durationSeconds ?? 1_200n, // 20 minutes -- one of the allowed 5/10/15/20 min durations
       // Matches setupTop10()'s fixed 'FOO'/'BAR' symbols, which every caller
       // in this file uses -- POST /api/duels now requires these to equal the
       // request body's tokenASymbol/tokenBSymbol (see app/api/duels/route.ts).
@@ -123,6 +124,16 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await mongoose.connection.close();
+});
+
+describe('create: open deadline', () => {
+  it("stores the escrow's on-chain openDeadline, not the server's clock", async () => {
+    const onChain = new Date('2026-01-01T00:05:00Z');
+    vi.mocked(readEscrowOpenDeadline).mockResolvedValueOnce(onChain);
+    const duel = await createOnChainDuel();
+    expect(new Date(duel.openDeadline).getTime()).toBe(onChain.getTime());
+    expect(readEscrowOpenDeadline).toHaveBeenCalledWith(ESCROW);
+  });
 });
 
 describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {

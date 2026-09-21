@@ -280,9 +280,10 @@ export default function CreateDuelPage() {
                         onValueChange={([v]) => setDuration(v)}
                     />
                     <div className="flex justify-between font-mono text-xs text-[var(--faint)]">
-                        <span>5m (fast)</span>
-                        <span>10m (standard)</span>
-                        <span>20m (extended)</span>
+                        <span>5m</span>
+                        <span>10m</span>
+                        <span>15m</span>
+                        <span>20m</span>
                     </div>
                 </div>
             </div>

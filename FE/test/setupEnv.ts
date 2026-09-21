@@ -49,6 +49,7 @@ vi.mock('@/lib/chainClient', async (importOriginal) => {
     readEscrowWinnerSide: vi.fn(),
     readSettlementSigner: vi.fn(async () => privateKeyToAccount(process.env.ORACLE_SIGNER_PRIVATE_KEY as `0x${string}`).address),
     readFactoryPaused: vi.fn(async () => false),
+    readEscrowOpenDeadline: vi.fn(async () => new Date(Date.now() + 5 * 60 * 1000)),
     readStakeTokenDecimals: vi.fn(async () => 18),
   };
 });

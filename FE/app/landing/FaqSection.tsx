@@ -15,7 +15,7 @@ const FAQS: FaqItem[] = [
         question: "What is a duel?",
         category: "basics",
         answer:
-            "Two already-trading tokens go head to head for 15 to 40 minutes. Both players lock an equal stablecoin stake on their side. When the clock runs out, the token with the higher validated market-cap gain wins.",
+            "Two already-trading tokens go head to head for 5, 10, 15 or 20 minutes. Both players lock an equal stablecoin stake on their side. When the clock runs out, the token with the higher validated market-cap gain wins.",
     },
     {
         question: "What does buy-only mean?",

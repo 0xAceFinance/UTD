@@ -16,8 +16,8 @@ const RULES = [
     {
         num: "01",
         title: "BUY ONLY",
-        body: "Two tokens, 15 to 40 minutes, no selling until the clock runs out. Whoever climbs further takes the match.",
-        note: "15–40 min rounds",
+        body: "Two tokens, 5 to 20 minutes, no selling until the clock runs out. Whoever climbs further takes the match.",
+        note: "5–20 min rounds",
     },
     {
         num: "02",
@@ -34,8 +34,8 @@ const RULES = [
 ]
 
 const STATS = [
-    { value: "90%", label: "to the winner" },
-    { value: "15–40", label: "minutes a round" },
+    { value: "80%", label: "to the winner" },
+    { value: "5–20", label: "minutes a round" },
     { value: "30s", label: "peak must hold" },
     { value: "0", label: "admin withdrawals" },
 ]
