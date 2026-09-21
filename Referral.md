@@ -2,8 +2,20 @@
 
 This document explains the referral/commission system end to end: the economics, the on-chain
 mechanics, the backend pipeline that drives it, and everything it writes to the database. It
-assumes familiarity with the base duel flow (`Contracts/README.md`, `FE/BACKEND_README.md`) —
-this system is layered on top of `BattleEscrow.settle()`, not a separate product.
+assumes familiarity with the base duel flow ([`README.md`](README.md),
+[`Contracts/README.md`](Contracts/README.md)) — this system is layered on top of
+`BattleEscrow.settle()`, not a separate product. See also [`Points.md`](Points.md) for the point
+checkpoints this system feeds into, and duel points that live entirely outside it.
+
+## Contents
+
+- [1. What it is, in one paragraph](#1-what-it-is-in-one-paragraph)
+- [2. Economics](#2-economics)
+- [3. On-chain layer](#3-on-chain-layer)
+- [4. Backend flow](#4-backend-flow)
+- [5. Database schema](#5-database-schema)
+- [6. Configuration — where to change each number](#6-configuration--where-to-change-each-number)
+- [7. Open items / not yet built](#7-open-items--not-yet-built)
 
 ## 1. What it is, in one paragraph
 
@@ -64,7 +76,8 @@ Source of truth: `FE/packages/points/src/config.ts` (`REFERRAL_TIER_CONFIG`) and
 ### 2.3 Point checkpoints (one-time, per wallet, ever)
 
 Two independent ladders, both landing in the same `CombatRecord.totalPoints` lifetime total that
-drives `CombatRecordNFT`'s tier:
+drives `CombatRecordNFT`'s tier (full detail, including duel-settlement points that are unrelated
+to referrals, in [`Points.md`](Points.md)):
 
 **Referred player's own cumulative bet volume** (rewards playing, regardless of referring anyone):
 
@@ -102,7 +115,7 @@ retune later — it's just those two places plus `RedemptionVault`'s owner-setta
 
 ## 3. On-chain layer
 
-### 3.1 `BattleEscrow.settle()` — the new signature
+### 3.1 `BattleEscrow.settle()` — the signature
 
 ```solidity
 function settle(
@@ -154,7 +167,7 @@ compromised or malicious oracle key is bounded by these no matter what:
   something the oracle can shortchange; only the platform-vs-referrer split within the remainder
   is trust-dependent.
 
-The `Settled` event now carries the full breakdown: `Settled(winnerSide, winner, winnerAmount,
+The `Settled` event carries the full breakdown: `Settled(winnerSide, winner, winnerAmount,
 platformAmount, referrerA, referrerAAmount, referrerB, referrerBAmount)`.
 
 ### 3.2 Fee/bounds configuration — no redeploy needed
@@ -174,8 +187,8 @@ at the moment each duel settles — the same pattern already used for `platformT
 
 | Setter | Bounds enforced | Notes |
 |---|---|---|
-| `setWinnerBps(uint256)` | `>= MIN_WINNER_BPS` (5000 = 50%) and `winnerBps + maxReferrerBps <= 10000` | Floored so a malicious owner can never zero out the winner's payout |
-| `setMaxReferrerBps(uint256)` | `winnerBps + maxReferrerBps <= 10000` | Prevents settle()'s pot subtraction from ever underflowing |
+| `setWinnerBps(uint256)` | `>= MIN_WINNER_BPS` (8000 = 80%) and `winnerBps + maxReferrerBps <= 10000` | Floored so a malicious owner can never zero out the winner's payout |
+| `setMaxReferrerBps(uint256)` | `<= MAX_REFERRER_BPS_CEILING` (1000 = 10%, i.e. 5% of the pot) and `winnerBps + maxReferrerBps <= 10000` | Prevents settle()'s pot subtraction from ever underflowing |
 | `setMinBuyIn(uint256)` | `> 0` and `<= maxBuyIn` (if a max is set) | Already existed before the referral system |
 | `setMaxBuyIn(uint256)` | `== 0` (uncapped) or `>= minBuyIn` | `0` is the default (uncapped) |
 
@@ -185,25 +198,25 @@ specific duel or move a specific player's funds (unlike `oracleSigner`, which *i
 because rotating it changes who can produce a valid settlement signature for every future duel).
 
 Defaults on a fresh deploy: `winnerBps = 9000` (90%), `maxReferrerBps = 500` (5%), `maxBuyIn = 0`
-(uncapped) — i.e. identical behavior to before these setters existed, until the owner calls one.
+(uncapped).
 
 ### 3.3 What still requires a redeploy
 
 The referral system **changed `settle()`'s function signature and its signed-message shape**, and
 `BattleEscrowFactory.escrowImplementation` is `immutable` (set once at construction). So getting
-this live on a chain that already has the old 2-argument `settle()` deployed (as of this writing,
-Robinhood Chain mainnet does — see `FE/.env.local`) requires:
+this live on a chain that already has an older 2-argument `settle()` deployed requires:
 
 1. Deploy a new `BattleEscrow` implementation (this code).
 2. Deploy a new `BattleEscrowFactory` pointed at it.
 3. Update `NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS` in the FE environment.
 4. All three steps happen together — the FE's ABI (`FE/abis/BattleEscrow.json`,
-   `FE/abis/BattleEscrowFactory.json`, already regenerated in this codebase to match the new
-   contracts) must never be pointed at the *old* deployed factory, or every call encodes
-   arguments the live contract doesn't expect.
+   `FE/abis/BattleEscrowFactory.json`) must never be pointed at the *old* deployed factory, or every
+   call encodes arguments the live contract doesn't expect.
 
-Duels already settled or in-flight against the *old* factory are unaffected and keep working under
-the old 80/20 rules until that factory is retired.
+The currently-deployed factory (see [`Contracts/README.md`](Contracts/README.md#deployments))
+already runs this referral-aware `settle()`. Duels settled or in-flight against any superseded
+factory are unaffected and keep working under whatever rules they were activated under until that
+factory is retired.
 
 ## 4. Backend flow
 
@@ -218,11 +231,13 @@ whitelist signup, extended to also serve as the live attribution source:
 - `referredBy` stores the **referrer's `referralCode`** (not their wallet address) — permanent,
   first-touch: once set, it is never overwritten, even by a different code on a later visit.
 - The client persists whichever `?ref=CODE` it last saw in `localStorage`/a cookie
-  (`FE/lib/referralClient.ts`'s `getStoredRef()`/`saveRefToStorage()`), for up to 30 days.
+  (`FE/lib/referralClient.ts`'s `getStoredRef()`/`saveRefToStorage()`), for up to 30 days. A global
+  `<ReferralTracker/>` component (`FE/components/ReferralTracker.tsx`) fires `getStoredRef()` once
+  on mount so the code is captured the moment someone lands on the site, before any wallet connects.
 
-**New for the live product**: `FE/lib/referralAttribution.ts`'s `attributeReferral(wallet, refCode)`
-is called from `POST /api/duels` (create) and `POST /api/duels/[id]/join` (join) — the two places a
-wallet does something real for the first time. It:
+`FE/lib/referralAttribution.ts`'s `attributeReferral(wallet, refCode)` is called from
+`POST /api/duels` (create) and `POST /api/duels/[id]/join` (join) — the two places a wallet does
+something real for the first time. It:
 
 1. Looks up an existing `WhitelistEntry` for the wallet.
 2. If none exists, creates one (`kind: 'wallet'`, `walletVerified: true` — this wallet already
@@ -300,7 +315,7 @@ transition is an atomic compare-and-swap — see `confirmOnChainSettlement`'s ow
 
 ## 5. Database schema
 
-### 5.1 `ReferralAccount` (new — `FE/lib/models/ReferralAccount.ts`)
+### 5.1 `ReferralAccount` (`FE/lib/models/ReferralAccount.ts`)
 
 One document per wallet that has ever settled a duel, whether or not it has ever referred anyone
 (volume tracking has to start somewhere).
@@ -313,11 +328,11 @@ One document per wallet that has ever settled a duel, whether or not it has ever
 | `volumeCheckpointsHit` | string[] | Checkpoint ids already awarded from `REFERRAL_VOLUME_CHECKPOINTS`, e.g. `"volume:50"` — permanent, never re-awarded |
 | `earningsCheckpointsHit` | string[] | Same, for `REFERRAL_EARNINGS_CHECKPOINTS`, e.g. `"earnings:100"` |
 
-### 5.2 `WhitelistEntry` (existing model, extended role — `FE/lib/models/WhitelistEntry.ts`)
+### 5.2 `WhitelistEntry` (`FE/lib/models/WhitelistEntry.ts` — existing model, extended role)
 
 No schema change. Its role changed: `referredBy`/`referralCode` are no longer pre-launch-only —
 `FE/lib/referralAttribution.ts` now also writes to this collection for any wallet that creates or
-joins a live duel. Relevant fields (unchanged):
+joins a live duel. Relevant fields:
 
 | Field | Meaning |
 |---|---|
@@ -327,7 +342,7 @@ joins a live duel. Relevant fields (unchanged):
 | `referredBy` | The `referralCode` of whoever referred this entry — permanent, first-touch |
 | `referralSybilFlagged` | Pre-launch IP-clustering signal — **not currently re-checked by the live-duel referral path**; see §7 open items |
 
-### 5.3 `Duel` (existing model, new fields — `FE/lib/models/Duel.ts`)
+### 5.3 `Duel` (`FE/lib/models/Duel.ts` — existing model, referral-specific fields)
 
 Snapshotted once, at signing time (`maybeSettle`/`retrySettlementSigning`), and reused verbatim
 everywhere downstream — never recomputed after signing.
@@ -341,10 +356,10 @@ everywhere downstream — never recomputed after signing.
 
 ### 5.4 `CombatRecord` (existing model, no schema change)
 
-`totalPoints` now also accumulates referral volume/earnings checkpoint bonuses (via
-`awardFlatPoints` in `duelEngine.ts`), on top of the existing win/loss points. Nothing distinguishes
-a checkpoint bonus from a match-result award in this ledger — they're the same number, by design
-(see the tier-threshold discussion in §2.3).
+`totalPoints` also accumulates referral volume/earnings checkpoint bonuses (via `awardFlatPoints`
+in `duelEngine.ts`), on top of the existing win/loss points. Nothing distinguishes a checkpoint
+bonus from a match-result award in this ledger — they're the same number, by design (see the
+tier-threshold discussion in §2.3, and full duel-points detail in [`Points.md`](Points.md)).
 
 ## 6. Configuration — where to change each number
 
@@ -360,10 +375,10 @@ a checkpoint bonus from a match-result award in this ledger — they're the same
 
 ## 7. Open items / not yet built
 
-- **No Referrals UI page yet.** Everything above is queryable (`ReferralAccount`, `WhitelistEntry`)
-  but there's no dashboard surfacing tier/volume/earnings/checkpoint progress to a wallet. The
-  duel-detail and create-flow screens were updated to show the correct 90%/10% split, but don't yet
-  show a per-duel referral-cut breakdown.
+- **No dedicated per-duel referral breakdown in the UI.** The `/referrals` dashboard surfaces
+  tier/volume/earnings/checkpoint progress (`ReferralAccount`, `WhitelistEntry` via
+  `GET /api/referrals/[wallet]`), and duel screens show the correct 90%/10% split, but no screen
+  yet shows a per-duel referral-cut line item.
 - **`referralSybilFlagged` isn't re-checked for live commissions.** It's a pre-launch-specific
   IP-clustering signal (`FE/lib/whitelistSybil.ts`) computed at signup time; a wallet flagged there
   still earns real on-chain referral commissions today. Worth deciding whether that signal (or the
@@ -373,3 +388,8 @@ a checkpoint bonus from a match-result award in this ledger — they're the same
   scale and the exact checkpoint values came from the original spec verbatim; the *thresholds*
   were a judgment call made to keep the numbers coherent and are worth revisiting once real
   referral activity exists.
+
+---
+
+Related: [`README.md`](README.md) · [`Points.md`](Points.md) ·
+[`Contracts/README.md`](Contracts/README.md)

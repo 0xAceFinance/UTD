@@ -302,13 +302,48 @@
   animation: utd-soft-pulse 1.8s ease-in-out infinite;
 }
 
+/* Unreached ladder segments: a traveling dash pattern reading toward the next
+   rank, so the still-locked stretch of track reads as "keep going this way"
+   rather than a dead line. The reached stretch (the solid acid-green overlay
+   painted on top of this) is never animated -- it's the one thing that
+   should look settled. */
+@keyframes utd-ladder-flow-x {
+  to { background-position: 24px 0; }
+}
+.utd-ladder-track {
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--line-2) 0px,
+    var(--line-2) 10px,
+    transparent 10px,
+    transparent 24px
+  );
+  animation: utd-ladder-flow-x 0.9s linear infinite;
+}
+
+@keyframes utd-ladder-flow-y {
+  to { background-position: 0 24px; }
+}
+.utd-ladder-track-vertical {
+  background-image: repeating-linear-gradient(
+    180deg,
+    var(--line-2) 0px,
+    var(--line-2) 10px,
+    transparent 10px,
+    transparent 24px
+  );
+  animation: utd-ladder-flow-y 0.9s linear infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .airdrop-orbit-ring,
   .airdrop-mascot,
   .app-airdrop-card::after,
   .app-airdrop-dot,
   .utd-rank-glow,
-  .utd-soft-pulse {
+  .utd-soft-pulse,
+  .utd-ladder-track,
+  .utd-ladder-track-vertical {
     animation: none;
   }
   .airdrop-burst {

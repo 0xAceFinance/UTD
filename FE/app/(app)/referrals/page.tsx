@@ -300,13 +300,13 @@ export default function ReferralsPage() {
 
         {/* Horizontal track -- needs real width to breathe, so it's md and up only. */}
         <div className="relative mt-11 hidden px-5 md:block">
-          <div className="absolute left-5 right-5 top-8 h-[3px] bg-[var(--line)]" />
+          <div className="utd-ladder-track absolute left-5 right-5 top-12 h-[3px] bg-[var(--line)]" />
           <div
-            className="absolute left-5 top-8 h-[3px] bg-[var(--acid)] shadow-[0_0_10px_rgba(43,232,132,0.6)] transition-all duration-700"
+            className="absolute left-5 top-12 h-[3px] bg-[var(--acid)] shadow-[0_0_10px_rgba(43,232,132,0.6)] transition-all duration-700"
             style={{ width: `calc((100% - 40px) * ${ladderFillPct / 100})` }}
           />
 
-          <div className="relative flex justify-between">
+          <div className="relative z-10 flex justify-between">
             {RANKS.map((rank, i) => {
               const state =
                 i < currentIndex
@@ -327,7 +327,7 @@ export default function ReferralsPage() {
                   <div
                     className={`relative flex flex-col items-center justify-center border-2 ${
                       state === "locked"
-                        ? "border-[var(--line-2)] bg-[var(--s1)] opacity-60"
+                        ? "border-[var(--line-2)] bg-[var(--s1)]"
                         : "border-[var(--acid)] bg-[var(--s2)]"
                     } ${state === "current" ? "h-[70px] w-[70px] utd-rank-glow" : "h-16 w-16"}`}
                     style={{ clipPath: OCTAGON_CLIP }}
@@ -372,7 +372,7 @@ export default function ReferralsPage() {
 
         {/* Vertical track -- phones and small tablets, where 5 badges in a row never fit. */}
         <div className="relative mt-7 md:hidden">
-          <div className="absolute bottom-7 left-7 top-7 w-[3px] bg-[var(--line)]" />
+          <div className="utd-ladder-track-vertical absolute bottom-7 left-7 top-7 w-[3px] bg-[var(--line)]" />
           <div
             className="absolute left-7 top-7 w-[3px] bg-[var(--acid)] shadow-[0_0_10px_rgba(43,232,132,0.6)] transition-all duration-700"
             style={{ height: `calc((100% - 56px) * ${ladderFillPct / 100})` }}
@@ -391,7 +391,7 @@ export default function ReferralsPage() {
                   <div
                     className={`relative z-10 flex h-14 w-14 flex-none flex-col items-center justify-center border-2 ${
                       state === "locked"
-                        ? "border-[var(--line-2)] bg-[var(--s1)] opacity-60"
+                        ? "border-[var(--line-2)] bg-[var(--s1)]"
                         : "border-[var(--acid)] bg-[var(--s2)]"
                     } ${state === "current" ? "utd-rank-glow" : ""}`}
                     style={{ clipPath: OCTAGON_CLIP }}
