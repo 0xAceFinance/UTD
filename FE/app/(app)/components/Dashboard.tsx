@@ -14,6 +14,7 @@ import { useFactoryState } from "@/hooks/useFactoryState"
 import { PausedBanner } from "./duel/PausedBanner"
 import { SideTag, StatusTag, TierBadge } from "./duel/SideTag"
 import { gmgnTokenUrl } from "@/lib/tokenLinks"
+import { arcadeAudio } from "@/lib/sound/arcadeAudio"
 import { DuelDTO, DuelStatus, DuelTokenDTO, formatRelativeTime, formatUsd, pctReturn } from "./duel/types"
 
 const STATUS_TABS: { label: string; value: DuelStatus | "ALL" }[] = [
@@ -219,7 +220,7 @@ export default function Dashboard() {
                             <button
                                 key={tab.value}
                                 aria-pressed={statusFilter === tab.value}
-                                onClick={() => setStatusFilter(tab.value)}
+                                onClick={() => { arcadeAudio.play("tab"); setStatusFilter(tab.value); }}
                             >
                                 {tab.label}
                             </button>
@@ -230,7 +231,7 @@ export default function Dashboard() {
                         rather than sitting there disabled. */}
                     {connected && (
                         <button
-                            onClick={() => setMineOnly((v) => !v)}
+                            onClick={() => { arcadeAudio.play("click"); setMineOnly((v) => !v); }}
                             aria-pressed={mineOnly}
                             aria-label="Only my duels"
                             title="Only my duels"
@@ -241,7 +242,7 @@ export default function Dashboard() {
                         </button>
                     )}
                     <button
-                        onClick={() => setSortOrder((s) => (s === "newest" ? "oldest" : "newest"))}
+                        onClick={() => { arcadeAudio.play("click"); setSortOrder((s) => (s === "newest" ? "oldest" : "newest")); }}
                         aria-label={sortOrder === "newest" ? "Sorted newest first" : "Sorted oldest first"}
                         title={sortOrder === "newest" ? "Newest first" : "Oldest first"}
                         className={`app-chip justify-center px-3 ${connected ? "" : "sm:ml-auto"}`}

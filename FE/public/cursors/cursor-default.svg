@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- Outer black stroke for contrast on any background -->
+  <path d="M1 0 L15 14 L9 14 L12 21 L8.5 22.5 L5.5 15.5 L1 19 Z" fill="#060907" stroke="#060907" stroke-width="1.2"/>
+  <!-- Neon Acid Edge -->
+  <path d="M2 1.5 L13 12.5 L8.2 12.5 L11 19.5 L9 20.5 L6.2 13.8 L2 17.5 Z" fill="#2be884"/>
+  <!-- Dark Cabinet Body -->
+  <path d="M3 3.5 L10.5 11 L7 11 L9 16.5 L8.2 17 L5.5 12 L3 14.5 Z" fill="#0c110e"/>
+  <!-- Hot Pink Core Line -->
+  <line x1="3" y1="4" x2="7" y2="8" stroke="#ff3d71" stroke-width="1.8" stroke-linecap="round"/>
+</svg>

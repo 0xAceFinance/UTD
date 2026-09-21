@@ -1,4 +1,5 @@
 "use client"
+import { arcadeAudio } from "@/lib/sound/arcadeAudio"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -116,6 +117,7 @@ export default function CreateDuelPage() {
                 toast.error(json.error ?? "Could not create the duel.")
                 return
             }
+            arcadeAudio.play("coin")
             toast.success("Lobby created. Waiting for an opponent.")
             router.push(`/duels/${json.data._id}`)
         } catch (err) {

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import { useParams } from "next/navigation"
 import {
     AlertDialog,
@@ -31,6 +31,8 @@ import { getFriendlyErrorMessage } from "@/lib/walletErrors"
 import { DuelDTO, canForceRefund, formatUsd, pctReturn } from "../../components/duel/types"
 
 import { GmgnLink } from "../../components/duel/GmgnLink"
+import { DuelLiveChart } from "../../components/duel/DuelLiveChart"
+import { arcadeAudio } from "@/lib/sound/arcadeAudio"
 
 
 function buildShareIntent(duel: DuelDTO, myResult: "won" | "lost" | null): string {
@@ -69,6 +71,30 @@ export default function DuelDetailPage() {
     const [reclaiming, setReclaiming] = useState(false)
     const [claiming, setClaiming] = useState(false)
     const [forceRefunding, setForceRefunding] = useState(false)
+    // Sound design audio cues for duel lifecycle and momentum flips
+    const prevStatusRef = useRef<string | null>(null)
+    const prevLeaderRef = useRef<number | null>(null)
+
+    useEffect(() => {
+        if (!duel) return
+        if (prevStatusRef.current && prevStatusRef.current !== duel.status) {
+            if (duel.status === "LIVE") {
+                arcadeAudio.play("fightStart")
+            } else if (duel.status === "SETTLED") {
+                arcadeAudio.play("victory")
+            }
+        }
+        prevStatusRef.current = duel.status
+
+        const gainA = pctReturn(duel.tokenA.startMarketCapUsd, duel.tokenA.currentMarketCapUsd)
+        const gainB = pctReturn(duel.tokenB.startMarketCapUsd, duel.tokenB.currentMarketCapUsd)
+        const leader = gainA > gainB ? 0 : gainB > gainA ? 1 : null
+        if (prevLeaderRef.current !== null && leader !== null && prevLeaderRef.current !== leader) {
+            arcadeAudio.play("whoosh")
+        }
+        prevLeaderRef.current = leader
+    }, [duel])
+
 
     const load = useCallback(async () => {
         const res = await fetch(`/api/duels/${params.id}`)
@@ -78,9 +104,10 @@ export default function DuelDetailPage() {
 
     useEffect(() => {
         load()
-        const id = setInterval(load, 3000)
+        const intervalMs = duel?.status === "LIVE" ? 1000 : 3000;
+        const id = setInterval(load, intervalMs);
         return () => clearInterval(id)
-    }, [load])
+    }, [load, duel?.status])
 
     async function handleCancel() {
         if (!duel || !address) return
@@ -162,6 +189,7 @@ export default function DuelDetailPage() {
             if (!json.success) toast.error(json.error)
             else {
                 toast.success("Settled. Escrow distributed.")
+                arcadeAudio.play("coin")
                 setDuel(json.data)
             }
         } catch (err) {
@@ -529,6 +557,9 @@ export default function DuelDetailPage() {
                     </div>
                 )
             })()}
+
+            {/* Live Dual-Token Head-to-Head Battle Chart */}
+            <DuelLiveChart duel={duel} />
 
             {/* Combat Arena: Side A vs Side B */}
             <div className="grid items-stretch gap-6 md:grid-cols-[1fr_auto_1fr]">

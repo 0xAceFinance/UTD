@@ -12,14 +12,26 @@ export interface DuelTokenDTO {
     change24hPct: number
 }
 
+export interface StoredPoolSample {
+    poolAddress: string
+    tokenAddress: string
+    dexName: string
+    reserveToken: number
+    reserveQuote: number
+    quotePriceUsd: number
+    timestampSec: number
+}
+
 export interface DuelTokenSideDTO {
     symbol: string
     name: string
     /** Absent on legacy duels created before addresses were stored. */
     tokenAddress?: string
+    totalSupply?: number
     startMarketCapUsd: number
     currentMarketCapUsd: number
     sustainedPeakMarketCapUsd: number
+    rawSamples?: StoredPoolSample[]
 }
 
 export type DuelStatus = 'OPEN' | 'MATCHED' | 'LIVE' | 'SETTLING' | 'HELD' | 'SETTLED' | 'EXPIRED' | 'CANCELLED'
