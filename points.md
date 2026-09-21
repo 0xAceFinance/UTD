@@ -128,11 +128,11 @@ These can't be verified against a real API, so they're self-reported. The abuse 
 | Fight your first duel | 300 | `wins + losses >= 1` |
 | Win a duel | 500 | `wins >= 1` |
 | Fight 5 duels | 1,000 | `wins + losses >= 5` (progress bar shows `current/5`) |
-| Reach Silver tier | 1,500 | `combatPoints >= 5,000` (progress bar shows `current/5,000`) |
+| Reach Silver tier | 1,500 | `combatPoints >= 15,000` (progress bar shows `current/15,000`) |
 
 **These are all verified straight from `CombatRecord`**, so they inherit whatever `finalizeSettlement` already wrote. No separate award logic.
 
-> **Known drift:** "Reach Silver tier" checks `combatPoints >= 5,000` (`lib/airdropConfig.ts`'s `target: 5000`), but the real Silver threshold (`tierForPoints`, §2.4) is **15,000**, raised after this task was written. Right now a wallet can complete this airdrop task at 5,000 points while still showing as Bronze everywhere else (Profile, leaderboard, `/referrals`). Either the task's `target` needs bumping to 15,000, or its copy needs to stop calling it "Silver tier." Not fixed here, just flagging it since this doc is meant to be the accurate map.
+> **Fixed:** "Reach Silver tier" previously checked `combatPoints >= 5,000` (`lib/airdropConfig.ts`'s `target: 5000`), stale against the real Silver threshold (`tierForPoints`, §2.4) of **15,000**, which had been raised after this task was written. `airdropConfig.ts`'s `target` (and its description copy) and `lib/airdrop.ts`'s fallback default are now both `15000`, matching `tierForPoints`.
 
 ### 3.4 Referral genesis points: decaying, separate from §2.3's checkpoints
 
@@ -171,7 +171,6 @@ Where `taskPoints` is the sum of every `done` task above (§3.1-3.3), `referral.
 
 ## 5. Open items
 
-- **Silver-tier drift** (§3.3): the airdrop task's `5,000` threshold is stale against the real `15,000` Silver boundary.
 - **`redeemedPoints` is inert**: read by the Profile API, never written by anything. No redemption flow exists yet (consistent with `RedemptionVault.sol` being undeployed; see the `points_stays_offchain` decision).
 - **No airdrop snapshot mechanism** (§3.5): the genesis total keeps moving indefinitely since it re-reads live combat points on every request.
 - **Two unrelated "referral points" concepts share the word "points"**: §2.3's checkpoint bonuses (land in `CombatRecord.totalPoints`, triggered by settled on-chain volume/earnings) versus §3.4's decaying genesis points (land only in the airdrop's live total, triggered by verified signups). They use the same referral code/link but are otherwise independent systems with independent formulas.

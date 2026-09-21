@@ -97,7 +97,7 @@ export async function getAirdropProgress(rawWallet: string | null): Promise<Aird
                 };
             }
             case 'reach-silver': {
-                const target = def.target ?? 5000;
+                const target = def.target ?? 15000;
                 return {
                     ...base,
                     status: combatPoints >= target ? 'done' : 'available',

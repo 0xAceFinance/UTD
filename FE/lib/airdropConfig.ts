@@ -98,9 +98,9 @@ export const AIRDROP_TASKS: AirdropTaskDef[] = [
         id: "reach-silver",
         category: "arena",
         title: "Reach Silver tier",
-        description: "5,000 lifetime combat points.",
+        description: "15,000 lifetime combat points.",
         points: 1500,
-        target: 5000,
+        target: 15000,
     },
 ]
 
