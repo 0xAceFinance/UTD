@@ -29,22 +29,26 @@ Duels last exactly 5, 10, 15 or 20 minutes; an unmatched lobby stays open for 5 
 
 | Contract | Address | Deploy tx | Block |
 |---|---|---|---|
-| `BattleEscrowFactory` | [`0x65f58fA80dd62460980B14979f062F1E67D35Cff`](https://robinhoodchain.blockscout.com/address/0x65f58fA80dd62460980B14979f062F1E67D35Cff) | `0x45590d9bd416ca82a6b0ce8663ebef8ad1c945819795e3556e07b295037b5a37` | 67296858 |
-| `BattleEscrow` (implementation) | [`0x42839837874979e50f019c5C23154578216fa72D`](https://robinhoodchain.blockscout.com/address/0x42839837874979e50f019c5C23154578216fa72D) | `0xe2cdc7a709af4fd9975a907ff8586a36274c9685f586eefe9aa850f7d72956b1` | 67296825 |
+| `BattleEscrowFactory` | [`0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E`](https://robinhoodchain.blockscout.com/address/0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E) | `0x8fe1b1de21904005c833564eff88e81d915215b3d2af040b9865b85abc2bbd09` | 69101094 |
+| `BattleEscrow` (implementation) | [`0x3028ea8aDA73b722bB271797b0Ca87FC28427a62`](https://robinhoodchain.blockscout.com/address/0x3028ea8aDA73b722bB271797b0Ca87FC28427a62) | `0x82323806be1de0e8bb3cf7aa1997b7ef3fa66fcace95aacaffe6170b5da9b265` | 69101063 |
 
 Both contracts are source-verified on Sourcify with an **exact match** (creation and
 runtime bytecode, solc 0.8.30), which Blockscout also displays:
-[factory](https://repo.sourcify.dev/4663/0x65f58fA80dd62460980B14979f062F1E67D35Cff),
-[implementation](https://repo.sourcify.dev/4663/0x42839837874979e50f019c5C23154578216fa72D).
+[factory](https://repo.sourcify.dev/4663/0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E),
+[implementation](https://repo.sourcify.dev/4663/0x3028ea8aDA73b722bB271797b0Ca87FC28427a62).
 The chain's official explorer is Blockscout at `robinhoodchain.blockscout.com`.
 
-**Superseded, do not use.** Both were replaced before any duel was created on them
-(`allDuelsLength() == 0`):
+**Superseded, do not use.**
 
 | Deployment | Factory | Implementation | Why replaced |
 |---|---|---|---|
 | 1st (blocks 67027457-67027489) | `0x32aB0586A99e7b7246225689dD6847a77E1d946D` | `0x0400babC9C034bba510DDe52EB829F87739C5e41` | 15-40 min durations |
 | 2nd (blocks 67283755-67283788) | `0xf56eED09448fE1C23009DA6D0f00DE1A927A862f` | `0x3F0F175EDBFb9688dC77ee0c6474030147784bCC` | 60 min open window |
+| 3rd (blocks 67296825-67296858) | `0x65f58fA80dd62460980B14979f062F1E67D35Cff` | `0x42839837874979e50f019c5C23154578216fa72D` | pre-dates referral settlement and the per-duel payout-terms snapshot |
+
+The 3rd deployment is the only superseded one that saw real duels (5). Its duel
+index 3, `0x35EB4C03C56740364AD6a5767c74F3F625c29b0a`, is still `Active` holding
+2 USDG past its `refundStale` window.
 
 Users interact with the factory only. Each duel is a minimal-proxy clone of the
 implementation; the implementation itself is locked (`initialize()` reverts

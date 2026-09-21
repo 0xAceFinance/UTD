@@ -20,8 +20,8 @@ deployments: [`../Contracts/README.md#deployments`](../Contracts/README.md#deplo
 
 | Contract | Address |
 |---|---|
-| `BattleEscrowFactory` | [`0x65f58fA80dd62460980B14979f062F1E67D35Cff`](https://robinhoodchain.blockscout.com/address/0x65f58fA80dd62460980B14979f062F1E67D35Cff) |
-| `BattleEscrow` (implementation) | [`0x42839837874979e50f019c5C23154578216fa72D`](https://robinhoodchain.blockscout.com/address/0x42839837874979e50f019c5C23154578216fa72D) |
+| `BattleEscrowFactory` | [`0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E`](https://robinhoodchain.blockscout.com/address/0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E) |
+| `BattleEscrow` (implementation) | [`0x3028ea8aDA73b722bB271797b0Ca87FC28427a62`](https://robinhoodchain.blockscout.com/address/0x3028ea8aDA73b722bB271797b0Ca87FC28427a62) |
 | Stake token (USDG, 6 decimals) | [`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`](https://robinhoodchain.blockscout.com/address/0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168) |
 
 Duels last 5, 10, 15 or 20 minutes; an unmatched lobby stays open for 5 minutes; minimum buy-in 1 USDG.
@@ -31,7 +31,7 @@ Public env for this deployment (server secrets are listed in [`.env.example`](./
 ```
 NEXT_PUBLIC_CHAIN_ID=4663
 NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com
-NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0x65f58fA80dd62460980B14979f062F1E67D35Cff
+NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E
 NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168
 ```
 
