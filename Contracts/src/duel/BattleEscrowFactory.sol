@@ -26,13 +26,13 @@ import "./IBattleEscrow.sol";
  * below) specifically so a compromised or malicious owner can't redirect a
  * live duel's payout instantly and unnoticed — anyone watching
  * OracleSignerRotationProposed has ORACLE_SIGNER_TIMELOCK_DELAY to react.
- * platformTreasury rotation only redirects the platform's own cut, not any
- * player's funds, so it stays instant -- same for winnerBps/maxReferrerBps
- * (Section-below setters): they retune the fee split's economics, not who
- * wins a given duel, and winnerBps is bounded at MIN_WINNER_BPS so they can
- * never be tuned toward zero. minBuyIn/maxBuyIn are likewise instant and
- * only ever change what future createDuel() calls accept, never anything
- * about a duel already in flight.
+ * platformTreasury, winnerBps and maxReferrerBps stay instant, but they are
+ * snapshotted into each escrow at activate() (alongside settlementSigner), so
+ * a retune only ever applies to duels activated after it -- it can never
+ * reprice, or redirect a cut of, a duel whose stakes are already locked.
+ * winnerBps is additionally floored at MIN_WINNER_BPS, so the platform's own
+ * cut can never exceed 20% of any pot. minBuyIn/maxBuyIn are likewise instant
+ * and only ever change what future createDuel() calls accept.
  */
 /// @dev Emergency pause (owner-only, instant): for a leaked or misbehaving
 /// oracle key, which the 24h signer timelock can't stop in time. While paused,
@@ -67,29 +67,36 @@ contract BattleEscrowFactory is Ownable, Pausable {
     uint256 public maxBuyIn;
 
     /// @dev Winner's fixed share of the pot at settlement, in bps of 10000 --
-    /// read live by BattleEscrow.settle() (Contracts/src/duel/BattleEscrow.sol)
-    /// rather than baked in as a constant, so the platform's take can be
-    /// retuned without redeploying the escrow implementation or the factory.
-    /// Floored at MIN_WINNER_BPS (see setWinnerBps) so a compromised or
-    /// malicious owner can tune fees within a real range but can never zero
-    /// out the winner's payout -- the instant-vs-timelocked distinction this
-    /// contract already draws for platformTreasury vs oracleSigner applies
-    /// here too: this is an economic parameter, not a redirection of a live
-    /// duel's outcome, so it stays instant like platformTreasury.
+    /// snapshotted by each escrow at activate() rather than baked in as a
+    /// constant, so the platform's take can be retuned (for future duels)
+    /// without redeploying the escrow implementation or the factory. Floored
+    /// at MIN_WINNER_BPS so a compromised or malicious owner can tune fees
+    /// within a real range but can never tune the winner's payout down, and
+    /// never for a duel already in flight.
     uint256 public winnerBps = 9000;
     /// @dev Hard ceiling on either referrer's cut in BattleEscrow.settle(), in
-    /// bps of one side's buyIn -- same live-read, retunable-without-redeploy
-    /// reasoning as winnerBps. Must always leave winnerBps + 2x this value
-    /// at or under 10000 (see setWinnerBps/setMaxReferrerBps), or a duel with
-    /// two maxed-out referrers would make settle()'s pot arithmetic underflow
-    /// and revert.
+    /// bps of one side's buyIn (half the pot) -- snapshotted at activate() with
+    /// winnerBps. Bounded by MAX_REFERRER_BPS_CEILING, and must always leave
+    /// winnerBps + this value at or under 10000 (see setWinnerBps/
+    /// setMaxReferrerBps), or a duel with two maxed-out referrers would make
+    /// settle()'s pot arithmetic underflow and revert.
     uint256 public maxReferrerBps = 500;
 
     /// @dev winnerBps can never be set below this -- keeps a compromised or
-    /// malicious owner from tuning the winner's payout down toward zero via
-    /// this instant (non-timelocked) setter. 5000 = 50%, comfortably below
+    /// malicious owner from tuning the winner's payout down via
+    /// this instant (non-timelocked) setter. 8000 = 80%, comfortably below
     /// the 9000 (90%) product default but still a real floor.
-    uint256 public constant MIN_WINNER_BPS = 5_000;
+    /// @dev The winner always keeps at least 80% of the pot, so the platform's
+    /// own cut can never exceed 20% of it -- and, with the referrer ceiling
+    /// below, a winner's payout is always strictly more than their own stake
+    /// (at 8000 bps of a 2x pot that's 1.6x the stake). Each duel snapshots
+    /// winnerBps at activate(), so a retune never reprices a duel in flight.
+    uint256 public constant MIN_WINNER_BPS = 8_000;
+
+    /// @dev Absolute ceiling on a single referrer's rate, independent of
+    /// winnerBps: each referrer's cut is charged on one player's stake (half
+    /// the pot), so 1000 bps is at most 5% of the pot per referrer.
+    uint256 public constant MAX_REFERRER_BPS_CEILING = 1_000;
 
     address public pendingOracleSigner;
     uint256 public pendingOracleSignerEffectiveAt;
@@ -248,9 +255,17 @@ contract BattleEscrowFactory is Ownable, Pausable {
     /// @dev Bounded so winnerBps + maxReferrerBps never exceeds 10000 -- see
     /// winnerBps's doc comment for what that protects against.
     function setMaxReferrerBps(uint256 _maxReferrerBps) external onlyOwner {
+        require(_maxReferrerBps <= MAX_REFERRER_BPS_CEILING, "maxReferrerBps above ceiling");
         require(winnerBps + _maxReferrerBps <= 10_000, "maxReferrerBps leaves winnerBps no room");
         maxReferrerBps = _maxReferrerBps;
         emit MaxReferrerBpsUpdated(_maxReferrerBps);
+    }
+
+    /// @dev Renouncing would leave the factory permanently paused-able with no
+    /// unpause and no way to rotate a leaked oracle signer. Ownership can still
+    /// be transferred (to a multisig), just never abandoned.
+    function renounceOwnership() public pure override {
+        revert("ownership cannot be renounced");
     }
 
     function pause() external onlyOwner {

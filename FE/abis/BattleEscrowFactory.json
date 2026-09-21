@@ -58,6 +58,19 @@
   },
   {
     "type": "function",
+    "name": "MAX_REFERRER_BPS_CEILING",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MIN_DURATION",
     "inputs": [],
     "outputs": [
@@ -404,7 +417,7 @@
     "name": "renounceOwnership",
     "inputs": [],
     "outputs": [],
-    "stateMutability": "nonpayable"
+    "stateMutability": "pure"
   },
   {
     "type": "function",

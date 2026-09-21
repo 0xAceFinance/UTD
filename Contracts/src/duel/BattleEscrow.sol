@@ -88,6 +88,14 @@ contract BattleEscrow is ReentrancyGuard {
     /// invalidate a result already signed for this duel, and a rotated-in key
     /// can't decide a duel that was already in flight.
     address public settlementSigner;
+    /// @dev The payout terms this duel was activated under, snapshotted here
+    /// for the same reason as settlementSigner: both players' stakes are
+    /// locked from activate() onward, so the split they agreed to must not be
+    /// re-tunable underneath them. A later setWinnerBps/setMaxReferrerBps/
+    /// setPlatformTreasury only applies to duels activated after it.
+    uint256 public winnerBps;
+    uint256 public maxReferrerBps;
+    address public platformTreasury;
 
     bool private initialized;
 
@@ -165,7 +173,11 @@ contract BattleEscrow is ReentrancyGuard {
         require(IERC20(stakeToken).balanceOf(address(this)) >= buyIn * 2, "opponent stake not received");
 
         opponent = _opponent;
-        settlementSigner = IBattleEscrowFactory(factory).oracleSigner();
+        IBattleEscrowFactory factory_ = IBattleEscrowFactory(factory);
+        settlementSigner = factory_.oracleSigner();
+        winnerBps = factory_.winnerBps();
+        maxReferrerBps = factory_.maxReferrerBps();
+        platformTreasury = factory_.platformTreasury();
         status = Status.Active;
         startTime = block.timestamp;
         endTime = startTime + durationSeconds;
@@ -248,7 +260,6 @@ contract BattleEscrow is ReentrancyGuard {
         require(!factory_.paused(), "paused");
         require(block.timestamp >= endTime, "battle still live");
         require(_winnerSide == 0 || _winnerSide == 1, "bad side");
-        uint256 maxReferrerBps = factory_.maxReferrerBps();
         require(_referrerABps <= maxReferrerBps, "referrer A rate too high");
         require(_referrerBBps <= maxReferrerBps, "referrer B rate too high");
 
@@ -262,12 +273,12 @@ contract BattleEscrow is ReentrancyGuard {
 
         address winner = (_winnerSide == creatorSide) ? creator : opponent;
         SettlementAmounts memory amounts =
-            _computeSettlementAmounts(factory_.winnerBps(), _referrerA, _referrerABps, _referrerB, _referrerBBps);
+            _computeSettlementAmounts(winnerBps, _referrerA, _referrerABps, _referrerB, _referrerBBps);
 
         _pay(winner, amounts.winnerAmount);
         if (amounts.referrerAAmount > 0) _pay(_referrerA, amounts.referrerAAmount);
         if (amounts.referrerBAmount > 0) _pay(_referrerB, amounts.referrerBAmount);
-        _pay(factory_.platformTreasury(), amounts.platformAmount);
+        _pay(platformTreasury, amounts.platformAmount);
 
         emit Settled(
             _winnerSide,
@@ -281,12 +292,13 @@ contract BattleEscrow is ReentrancyGuard {
         );
     }
 
-    /// @dev Winner's cut is `_winnerBps` of the pot (the factory's current
-    /// winnerBps, e.g. 9000 = 90% by default); each referrer's cut is on
-    /// their own referred player's stake (buyIn), not the pot -- at the
-    /// factory's maxReferrerBps ceiling (default 500 = 5%) that's 2.5% of the
-    /// pot each. The platform gets whatever's left. Factory.setWinnerBps
-    /// guarantees `_winnerBps + maxReferrerBps <= 10000` at all times, so this
+    /// @dev Winner's cut is `_winnerBps` of the pot (this duel's snapshotted
+    /// winnerBps, e.g. 9000 = 90%); each referrer's cut is on their own
+    /// referred player's stake (buyIn), not the pot -- at the snapshotted
+    /// maxReferrerBps ceiling (default 500 = 5%) that's 2.5% of the pot each.
+    /// The platform gets whatever's left, which the factory's
+    /// MIN_WINNER_BPS floor caps at 20% of the pot. The factory guarantees
+    /// `_winnerBps + maxReferrerBps <= 10000` at all times, so this
     /// subtraction can never underflow even with both referrers maxed out.
     function _computeSettlementAmounts(
         uint256 _winnerBps,

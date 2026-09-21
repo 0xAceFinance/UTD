@@ -380,9 +380,15 @@ contract BattleEscrowFactoryAdversarialTest is Test {
     }
 
     function test_setMaxReferrerBpsRejectsLeavingNoRoomForWinnerBpsAndNonOwner() public {
-        // winnerBps defaults to 9000 -- 1001 would push the combined total over 10000.
-        vm.expectRevert("maxReferrerBps leaves winnerBps no room");
+        // Above the absolute ceiling, whatever winnerBps happens to be.
+        vm.expectRevert("maxReferrerBps above ceiling");
         factory.setMaxReferrerBps(1_001);
+
+        // Within the ceiling, but leaves winnerBps (raised to 9500) no room.
+        factory.setWinnerBps(9_500);
+        vm.expectRevert("maxReferrerBps leaves winnerBps no room");
+        factory.setMaxReferrerBps(1_000);
+        factory.setWinnerBps(9_000);
 
         vm.prank(rando);
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", rando));

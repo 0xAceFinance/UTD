@@ -135,15 +135,17 @@ contract BattleEscrowTest is Test {
 
     /// @dev The whole point of reading winnerBps/maxReferrerBps live from the
     /// factory instead of baking them into BattleEscrow as constants: the
-    /// owner can retune the fee split on the existing, already-deployed
-    /// factory and implementation, and an in-flight duel picks it up at
-    /// settle() time -- no new implementation, no new factory, no migration.
-    function test_settleUsesWhicheverWinnerBpsIsCurrentOnTheFactoryAtSettleTime() public {
+    /// owner can retune the fee split for FUTURE duels on the existing,
+    /// already-deployed factory and implementation -- but a duel already
+    /// activated keeps the terms it started under (snapshotted at activate()),
+    /// so neither player's locked stake can be repriced underneath them.
+    function test_settleUsesTheWinnerBpsSnapshottedWhenTheDuelWasActivated() public {
         address duel = _createDuel();
         vm.prank(opponent);
         factory.joinDuel(duel);
+        assertEq(BattleEscrow(duel).winnerBps(), 9_000);
 
-        // Retuned *after* the duel was created and joined.
+        // Retuned *after* the duel was created and joined: must not apply here.
         factory.setWinnerBps(9_500);
 
         vm.warp(block.timestamp + DURATION + 1);
@@ -151,38 +153,108 @@ contract BattleEscrowTest is Test {
         BattleEscrow(duel).settle(0, address(0), 0, address(0), 0, sig);
 
         uint256 pot = BUY_IN * 2;
-        assertEq(stakeToken.balanceOf(creator), 1_000e18 - BUY_IN + (pot * 9_500) / 10000);
-        assertEq(stakeToken.balanceOf(platformTreasury), pot - (pot * 9_500) / 10000);
+        assertEq(stakeToken.balanceOf(creator), 1_000e18 - BUY_IN + (pot * 9_000) / 10000);
+        assertEq(stakeToken.balanceOf(platformTreasury), pot - (pot * 9_000) / 10000);
     }
 
-    /// @dev Mirrors test_settleUsesWhicheverWinnerBpsIsCurrentOnTheFactoryAtSettleTime
-    /// for the other live-retunable knob: maxReferrerBps is also read fresh
-    /// at settle() time, not snapshotted at duel creation. A referrer rate
-    /// that was within cap when the oracle signed it can still be rejected
-    /// on-chain if the owner tightens the cap before settle() lands -- the
-    /// on-chain bound always wins over whatever the (possibly stale) signed
-    /// payload says, which is the whole point of enforcing it in the
-    /// contract instead of trusting the oracle to only ever sign valid rates.
-    function test_settleEnforcesWhicheverMaxReferrerBpsIsCurrentOnTheFactoryAtSettleTime() public {
+    /// @dev MONEY SAFETY: the owner key alone (no oracle key) must not be able
+    /// to take a cut of a pot that is already staked. Before the snapshot,
+    /// setWinnerBps(floor) + setPlatformTreasury(attacker) during a live duel
+    /// diverted 40% of the pot from the winner on an honest, already-signed
+    /// settlement.
+    function test_ownerCannotRepriceOrRedirectAnAlreadyActiveDuel() public {
+        address duel = _createDuel();
+        vm.prank(opponent);
+        factory.joinDuel(duel);
+
+        address attacker = address(0xBAD);
+        factory.setWinnerBps(factory.MIN_WINNER_BPS());
+        factory.setPlatformTreasury(attacker);
+
+        vm.warp(block.timestamp + DURATION + 1);
+        BattleEscrow(duel).settle(0, address(0), 0, address(0), 0, _signSettlement(duel, 0));
+
+        uint256 pot = BUY_IN * 2;
+        assertEq(stakeToken.balanceOf(creator), 1_000e18 - BUY_IN + (pot * 9_000) / 10000);
+        assertEq(stakeToken.balanceOf(attacker), 0);
+        assertEq(stakeToken.balanceOf(platformTreasury), pot - (pot * 9_000) / 10000);
+    }
+
+    /// @dev The platform's own cut can never exceed 20% of the pot: winnerBps
+    /// is floored at 80%, and whatever referrers take comes out of the
+    /// remaining 20%, never out of the winner's share.
+    function test_platformCutCanNeverExceedTwentyPercentOfThePot() public {
+        factory.setWinnerBps(factory.MIN_WINNER_BPS());
+        address duel = _createDuel();
+        vm.prank(opponent);
+        factory.joinDuel(duel);
+
+        vm.warp(block.timestamp + DURATION + 1);
+        BattleEscrow(duel).settle(0, address(0), 0, address(0), 0, _signSettlement(duel, 0));
+
+        uint256 pot = BUY_IN * 2;
+        assertEq(stakeToken.balanceOf(platformTreasury), (pot * 2_000) / 10000);
+        // ...and the winner still clears their own stake by a real margin.
+        assertGt((pot * 8_000) / 10000, BUY_IN);
+    }
+
+    function test_winnerBpsCannotBeSetBelowEightyPercent() public {
+        assertEq(factory.MIN_WINNER_BPS(), 8_000);
+        vm.expectRevert("winnerBps below floor");
+        factory.setWinnerBps(7_999);
+    }
+
+    /// @dev A referrer's cut is charged on one player's stake (half the pot),
+    /// and the ceiling is absolute -- independent of how low winnerBps goes --
+    /// so the referral channel can never be widened into a pot drain.
+    function test_maxReferrerBpsHasAnAbsoluteCeiling() public {
+        assertEq(factory.MAX_REFERRER_BPS_CEILING(), 1_000);
+        vm.expectRevert("maxReferrerBps above ceiling");
+        factory.setMaxReferrerBps(1_001);
+
+        factory.setMaxReferrerBps(1_000); // the ceiling itself is fine
+        assertEq(factory.maxReferrerBps(), 1_000);
+    }
+
+    /// @dev Mirrors the winnerBps snapshot for the other retunable knob: a
+    /// referrer rate that was within cap when the oracle signed it stays
+    /// valid, so tightening the cap can no longer strand an already-signed
+    /// settlement (which used to leave the duel to expire into refundStale).
+    function test_settleEnforcesTheMaxReferrerBpsSnapshottedAtActivation() public {
+        address duel = _createDuel();
+        vm.prank(opponent);
+        factory.joinDuel(duel);
+        assertEq(BattleEscrow(duel).maxReferrerBps(), 500);
+
+        address referrerA = address(0x5001);
+        uint256 referrerABps = 500; // == maxReferrerBps at activation
+        bytes memory sig = _signSettlementWithReferrers(duel, 0, referrerA, referrerABps, address(0), 0);
+
+        // Tightened *after* activation: the in-flight duel keeps its own cap.
+        factory.setMaxReferrerBps(200);
+
+        vm.warp(block.timestamp + DURATION + 1);
+        BattleEscrow(duel).settle(0, referrerA, referrerABps, address(0), 0, sig);
+        assertEq(stakeToken.balanceOf(referrerA), (BUY_IN * 500) / 10000);
+    }
+
+    /// @dev The signed payload still can't exceed the duel's own cap.
+    function test_settleRejectsAReferrerRateAboveTheSnapshottedCap() public {
         address duel = _createDuel();
         vm.prank(opponent);
         factory.joinDuel(duel);
 
         address referrerA = address(0x5001);
-        uint256 referrerABps = 500; // == the default maxReferrerBps, valid at signing time
-        bytes memory sig = _signSettlementWithReferrers(duel, 0, referrerA, referrerABps, address(0), 0);
-
-        // Tightened *after* the duel was created/joined and the settlement signed.
-        factory.setMaxReferrerBps(200);
-
+        bytes memory sig = _signSettlementWithReferrers(duel, 0, referrerA, 501, address(0), 0);
         vm.warp(block.timestamp + DURATION + 1);
         vm.expectRevert("referrer A rate too high");
-        BattleEscrow(duel).settle(0, referrerA, referrerABps, address(0), 0, sig);
+        BattleEscrow(duel).settle(0, referrerA, 501, address(0), 0, sig);
+    }
 
-        // A freshly signed settlement at the new, lower cap still goes through fine.
-        bytes memory sig2 = _signSettlementWithReferrers(duel, 0, referrerA, 200, address(0), 0);
-        BattleEscrow(duel).settle(0, referrerA, 200, address(0), 0, sig2);
-        assertEq(stakeToken.balanceOf(referrerA), (BUY_IN * 200) / 10000);
+    function test_ownershipCannotBeRenounced() public {
+        vm.expectRevert("ownership cannot be renounced");
+        factory.renounceOwnership();
+        assertEq(factory.owner(), address(this));
     }
 
     /// @dev minBuyIn/maxBuyIn only gate createDuel -- settle() never checks
