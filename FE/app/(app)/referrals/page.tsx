@@ -298,7 +298,8 @@ export default function ReferralsPage() {
           </div>
         </div>
 
-        <div className="relative mt-11 px-5">
+        {/* Horizontal track -- needs real width to breathe, so it's md and up only. */}
+        <div className="relative mt-11 hidden px-5 md:block">
           <div className="absolute left-5 right-5 top-8 h-[3px] bg-[var(--line)]" />
           <div
             className="absolute left-5 top-8 h-[3px] bg-[var(--acid)] shadow-[0_0_10px_rgba(43,232,132,0.6)] transition-all duration-700"
@@ -316,7 +317,7 @@ export default function ReferralsPage() {
               return (
                 <div
                   key={rank.bps}
-                  className="flex w-[110px] flex-col items-center sm:w-[120px]"
+                  className="flex w-[110px] flex-col items-center lg:w-[120px]"
                 >
                   <div
                     className={`utd-pixel h-4 text-[7px] text-[var(--acid)] ${state === "current" ? "utd-soft-pulse" : "invisible"}`}
@@ -369,7 +370,80 @@ export default function ReferralsPage() {
           </div>
         </div>
 
-        <div className="mt-8 flex items-center gap-4 border-t border-[var(--line)] pt-5">
+        {/* Vertical track -- phones and small tablets, where 5 badges in a row never fit. */}
+        <div className="relative mt-7 md:hidden">
+          <div className="absolute bottom-7 left-7 top-7 w-[3px] bg-[var(--line)]" />
+          <div
+            className="absolute left-7 top-7 w-[3px] bg-[var(--acid)] shadow-[0_0_10px_rgba(43,232,132,0.6)] transition-all duration-700"
+            style={{ height: `calc((100% - 56px) * ${ladderFillPct / 100})` }}
+          />
+
+          <div className="relative flex flex-col gap-5">
+            {RANKS.map((rank, i) => {
+              const state =
+                i < currentIndex
+                  ? "past"
+                  : i === currentIndex
+                    ? "current"
+                    : "locked";
+              return (
+                <div key={rank.bps} className="flex items-center gap-4">
+                  <div
+                    className={`relative z-10 flex h-14 w-14 flex-none flex-col items-center justify-center border-2 ${
+                      state === "locked"
+                        ? "border-[var(--line-2)] bg-[var(--s1)] opacity-60"
+                        : "border-[var(--acid)] bg-[var(--s2)]"
+                    } ${state === "current" ? "utd-rank-glow" : ""}`}
+                    style={{ clipPath: OCTAGON_CLIP }}
+                  >
+                    <span
+                      className={`utd-pixel text-[6px] ${state === "locked" ? "text-[var(--faint)]" : "text-[var(--dim)]"}`}
+                    >
+                      {rank.numeral}
+                    </span>
+                    <span
+                      className={`utd-pixel text-[11px] ${state === "locked" ? "text-[var(--faint)]" : "text-[var(--acid)]"}`}
+                    >
+                      {rank.bps / 100}%
+                    </span>
+                    {state === "past" && (
+                      <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-[var(--acid)]">
+                        <Check
+                          className="h-2.5 w-2.5 text-[var(--acid-ink)]"
+                          strokeWidth={3.5}
+                        />
+                      </span>
+                    )}
+                    {state === "locked" && (
+                      <span className="absolute -bottom-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full border border-[var(--line-2)] bg-[var(--s2)]">
+                        <Lock className="h-2.5 w-2.5 text-[var(--faint)]" />
+                      </span>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`text-[13px] font-bold tracking-wide ${state === "locked" ? "text-[var(--faint)]" : "text-white"}`}
+                      >
+                        {rank.name}
+                      </span>
+                      {state === "current" && (
+                        <span className="utd-pixel utd-soft-pulse border border-[var(--acid)] px-1.5 py-0.5 text-[7px] text-[var(--acid)]">
+                          YOU
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-0.5 font-mono text-[11px] text-[var(--faint)]">
+                      {rank.thresholdLabel}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-8 flex flex-col gap-2 border-t border-[var(--line)] pt-5 sm:flex-row sm:items-center sm:gap-4">
           {nextRank && tier.nextThresholdUsd != null ? (
             <>
               <span className="flex-none text-[12.5px] text-[var(--dim)]">
