@@ -34,7 +34,7 @@ const RULES = [
 ]
 
 const STATS = [
-    { value: "80%", label: "to the winner" },
+    { value: "90%", label: "to the winner" },
     { value: "15–40", label: "minutes a round" },
     { value: "30s", label: "peak must hold" },
     { value: "0", label: "admin withdrawals" },

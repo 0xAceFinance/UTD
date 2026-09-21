@@ -83,11 +83,20 @@ contract CombatRecordNFT is ERC721, Ownable {
     }
 
     /// @dev Mirrors points/src/pointsEngine.ts's tierForPoints — keep the two in sync by hand for now.
+    ///
+    /// Raised from the original 5,000/25,000/100,000 scale once referral
+    /// checkpoint bonuses (FE/packages/points/src/referralEngine.ts) started
+    /// landing in this same lifetime-points total: a single top referral
+    /// checkpoint is worth up to 250,000 points on its own, so the old
+    /// Diamond threshold would be trivially cleared by one referral bonus
+    /// rather than sustained play. These are a first-pass default, not a
+    /// permanent number -- worth revisiting once real point volumes from
+    /// live referral activity exist.
     function tierOf(address wallet) public view returns (string memory) {
         uint256 pts = totalPoints[wallet];
-        if (pts >= 100_000) return "Diamond";
-        if (pts >= 25_000) return "Gold";
-        if (pts >= 5_000) return "Silver";
+        if (pts >= 500_000) return "Diamond";
+        if (pts >= 100_000) return "Gold";
+        if (pts >= 15_000) return "Silver";
         return "Bronze";
     }
 

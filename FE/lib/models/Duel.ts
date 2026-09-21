@@ -96,6 +96,17 @@ export interface IDuel extends Document {
      * transaction in flight, so the cron and a page view can't both pay gas
      * to submit the same settlement. */
     relayLockedUntil?: Date;
+    /** Creator's/opponent's referrer wallet and the bps rate signed into the
+     * settlement (lib/referralAccount.ts::currentReferrerBps), snapshotted at
+     * the same moment oracleSignature is produced -- lib/duelEngine.ts's
+     * finalizeSettlement() reuses these exact values (never recomputes) so
+     * referral crediting always matches what was actually signed and paid
+     * on-chain, even if the referrer's tier moved in between. Absent/0 means
+     * no referrer on that side. */
+    creatorReferrerWallet?: string;
+    creatorReferrerBps?: number;
+    opponentReferrerWallet?: string;
+    opponentReferrerBps?: number;
 }
 
 const PoolSampleSchema = new Schema<StoredPoolSample>(
@@ -152,6 +163,10 @@ const DuelSchema = new Schema<IDuel>({
         default: undefined,
     },
     relayLockedUntil: Date,
+    creatorReferrerWallet: { type: String, lowercase: true },
+    creatorReferrerBps: Number,
+    opponentReferrerWallet: { type: String, lowercase: true },
+    opponentReferrerBps: Number,
 });
 
 export default models.Duel || model<IDuel>('Duel', DuelSchema);

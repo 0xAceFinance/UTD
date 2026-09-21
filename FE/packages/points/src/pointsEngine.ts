@@ -40,10 +40,20 @@ export function computeMatchPoints(input: MatchOutcomeInput): MatchPoints {
 
 export type Tier = "Bronze" | "Silver" | "Gold" | "Diamond";
 
+/**
+ * Raised from the original 5,000/25,000/100,000 scale once referral
+ * checkpoint bonuses (referralEngine.ts) started landing in this same
+ * lifetime-points total: a single top referral checkpoint is worth up to
+ * 250,000 points on its own, so the old Diamond threshold would be trivially
+ * cleared by one referral bonus rather than sustained play. First-pass
+ * default, not permanent -- worth revisiting once real point volumes from
+ * live referral activity exist. Mirrored by hand in
+ * Contracts/src/rewards/CombatRecordNFT.sol's tierOf().
+ */
 const TIER_THRESHOLDS: { tier: Tier; min: number }[] = [
-  { tier: "Diamond", min: 100_000 },
-  { tier: "Gold", min: 25_000 },
-  { tier: "Silver", min: 5_000 },
+  { tier: "Diamond", min: 500_000 },
+  { tier: "Gold", min: 100_000 },
+  { tier: "Silver", min: 15_000 },
   { tier: "Bronze", min: 0 },
 ];
 

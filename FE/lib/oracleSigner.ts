@@ -28,16 +28,41 @@ async function signerFor(escrowAddress: `0x${string}`) {
     );
 }
 
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
+
+export interface ReferralSettlementTerms {
+    referrerA: `0x${string}`;
+    referrerABps: bigint;
+    referrerB: `0x${string}`;
+    referrerBBps: bigint;
+}
+
+/** No referrer on either side -- the common case for a duel where neither player was referred. */
+export const NO_REFERRERS: ReferralSettlementTerms = {
+    referrerA: ZERO_ADDRESS,
+    referrerABps: 0n,
+    referrerB: ZERO_ADDRESS,
+    referrerBBps: 0n,
+};
+
 /**
  * Signs a settlement result exactly the way BattleEscrow.settle() verifies
  * it (Contracts/src/duel/BattleEscrow.sol): keccak256(abi.encodePacked(duel,
- * winnerSide, chainid)), then the standard EIP-191 personal-sign prefix --
- * viem's signMessage with a raw hash applies that prefix automatically,
- * matching Solidity's MessageHashUtils.toEthSignedMessageHash(). Anyone
- * holding this signature can submit settle() permissionlessly; the contract
- * only trusts the signature, never who calls it. chainid is folded in so a
- * signature can never be replayed on a different chain (relevant if this is
- * ever deployed to more than one chain from the same deployer key).
+ * winnerSide, referrerA, referrerABps, referrerB, referrerBBps, chainid)),
+ * then the standard EIP-191 personal-sign prefix -- viem's signMessage with a
+ * raw hash applies that prefix automatically, matching Solidity's
+ * MessageHashUtils.toEthSignedMessageHash(). Anyone holding this signature
+ * can submit settle() permissionlessly; the contract only trusts the
+ * signature, never who calls it. chainid is folded in so a signature can
+ * never be replayed on a different chain (relevant if this is ever deployed
+ * to more than one chain from the same deployer key).
+ *
+ * referrerA is the creator's referrer and their current commission tier
+ * (lib/referralAccount.ts::currentReferrerBps), referrerB is the opponent's
+ * -- pass NO_REFERRERS when neither side has one. These get folded into the
+ * signed message itself (not just paid out separately) so nobody can take a
+ * validly-signed settlement and redirect the referral cut by supplying
+ * different referrer args when they submit settle().
  *
  * ORACLE_SIGNER_PRIVATE_KEY is one of Anvil's well-known local test keys
  * today (see .env.local) -- never a real secret, safe for local dev. Before
@@ -45,10 +70,25 @@ async function signerFor(escrowAddress: `0x${string}`) {
  * KMS-backed signer, not a plain env var), and BattleEscrowFactory's
  * oracleSigner must be set to match it.
  */
-export async function signSettlement(escrowAddress: `0x${string}`, winnerSide: 0 | 1): Promise<`0x${string}`> {
+export async function signSettlement(
+    escrowAddress: `0x${string}`,
+    winnerSide: 0 | 1,
+    referrals: ReferralSettlementTerms = NO_REFERRERS
+): Promise<`0x${string}`> {
     const account = await signerFor(escrowAddress);
     const message = keccak256(
-        encodePacked(['address', 'uint8', 'uint256'], [escrowAddress, winnerSide, BigInt(CONTRACTS.chainId)])
+        encodePacked(
+            ['address', 'uint8', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+            [
+                escrowAddress,
+                winnerSide,
+                referrals.referrerA,
+                referrals.referrerABps,
+                referrals.referrerB,
+                referrals.referrerBBps,
+                BigInt(CONTRACTS.chainId),
+            ]
+        )
     );
     return account.signMessage({ message: { raw: message } });
 }

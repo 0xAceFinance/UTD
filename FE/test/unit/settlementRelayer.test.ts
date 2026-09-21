@@ -73,8 +73,13 @@ describe('lib/settlementRelayer::submitSettlement', () => {
 
     expect(await submitSettlement(duel)).toBe('settled');
 
+    const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
     expect(simulate).toHaveBeenCalledWith(
-      expect.objectContaining({ address: ESCROW, functionName: 'settle', args: [1, duel.oracleSignature] })
+      expect.objectContaining({
+        address: ESCROW,
+        functionName: 'settle',
+        args: [1, ZERO_ADDRESS, 0n, ZERO_ADDRESS, 0n, duel.oracleSignature],
+      })
     );
     expect(writeContract).toHaveBeenCalledTimes(1);
     expect(chainVerifyMocks.verifyDuelSettled).toHaveBeenCalledWith(TX, ESCROW);

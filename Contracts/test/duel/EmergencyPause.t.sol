@@ -44,8 +44,18 @@ contract EmergencyPauseTest is Test {
         factory.joinDuel(address(duel));
     }
 
+    /// @dev Void-only signer -- voidActive()'s message shape never grew referrer fields.
     function _sign(BattleEscrow duel, uint8 marker) internal view returns (bytes memory) {
         bytes32 digest = MessageHashUtils.toEthSignedMessageHash(keccak256(abi.encodePacked(address(duel), marker, block.chainid)));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(oracleKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// @dev No-referrer settle signer -- these tests exercise pause behavior, not referral payouts.
+    function _signSettle(BattleEscrow duel, uint8 winnerSide) internal view returns (bytes memory) {
+        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
+            keccak256(abi.encodePacked(address(duel), winnerSide, address(0), uint256(0), address(0), uint256(0), block.chainid))
+        );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(oracleKey, digest);
         return abi.encodePacked(r, s, v);
     }
@@ -81,7 +91,7 @@ contract EmergencyPauseTest is Test {
         factory.pause();
 
         vm.expectRevert("paused");
-        duel.settle(0, _sign(duel, 0));
+        duel.settle(0, address(0), 0, address(0), 0, _signSettle(duel, 0));
 
         vm.expectRevert("paused");
         duel.voidActive(_sign(duel, 2));
@@ -116,12 +126,12 @@ contract EmergencyPauseTest is Test {
     function test_unpauseRestoresSettlement() public {
         BattleEscrow duel = _createAndJoin();
         vm.warp(block.timestamp + DURATION);
-        bytes memory sig = _sign(duel, 1);
+        bytes memory sig = _signSettle(duel, 1);
 
         factory.pause();
         factory.unpause();
 
-        duel.settle(1, sig);
+        duel.settle(1, address(0), 0, address(0), 0, sig);
         assertEq(uint8(duel.status()), uint8(BattleEscrow.Status.Settled));
     }
 }

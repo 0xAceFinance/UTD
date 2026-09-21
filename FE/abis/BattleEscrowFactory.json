@@ -58,6 +58,19 @@
   },
   {
     "type": "function",
+    "name": "MIN_WINNER_BPS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "ORACLE_SIGNER_TIMELOCK_DELAY",
     "inputs": [],
     "outputs": [
@@ -238,6 +251,32 @@
   },
   {
     "type": "function",
+    "name": "maxBuyIn",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxReferrerBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "minBuyIn",
     "inputs": [],
     "outputs": [
@@ -369,6 +408,32 @@
   },
   {
     "type": "function",
+    "name": "setMaxBuyIn",
+    "inputs": [
+      {
+        "name": "_maxBuyIn",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMaxReferrerBps",
+    "inputs": [
+      {
+        "name": "_maxReferrerBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setMinBuyIn",
     "inputs": [
       {
@@ -395,6 +460,19 @@
   },
   {
     "type": "function",
+    "name": "setWinnerBps",
+    "inputs": [
+      {
+        "name": "_winnerBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "transferOwnership",
     "inputs": [
       {
@@ -412,6 +490,19 @@
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "winnerBps",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "event",
@@ -534,6 +625,32 @@
   },
   {
     "type": "event",
+    "name": "MaxBuyInUpdated",
+    "inputs": [
+      {
+        "name": "maxBuyIn",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "MaxReferrerBpsUpdated",
+    "inputs": [
+      {
+        "name": "maxReferrerBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "MinBuyInUpdated",
     "inputs": [
       {
@@ -631,6 +748,19 @@
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "WinnerBpsUpdated",
+    "inputs": [
+      {
+        "name": "winnerBps",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false

@@ -42,6 +42,7 @@ export type RelayOutcome =
 /** How long one relay attempt holds a duel before another may retry it. Longer than the receipt wait below. */
 const RELAY_LEASE_MS = 2 * 60_000;
 const RECEIPT_TIMEOUT_MS = 60_000;
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 
 function relayerAccount() {
     const key = process.env.RELAYER_PRIVATE_KEY;
@@ -130,7 +131,14 @@ async function relay(duel: IDuel): Promise<RelayOutcome> {
             address: escrow,
             abi: BattleEscrowAbi,
             functionName: 'settle',
-            args: [duel.winnerSide, duel.oracleSignature as `0x${string}`],
+            args: [
+                duel.winnerSide,
+                (duel.creatorReferrerWallet as `0x${string}`) ?? ZERO_ADDRESS,
+                BigInt(duel.creatorReferrerBps ?? 0),
+                (duel.opponentReferrerWallet as `0x${string}`) ?? ZERO_ADDRESS,
+                BigInt(duel.opponentReferrerBps ?? 0),
+                duel.oracleSignature as `0x${string}`,
+            ],
         });
         const hash = await createWalletClient({
             account,

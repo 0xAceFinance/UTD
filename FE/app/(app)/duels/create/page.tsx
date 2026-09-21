@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { useWallet } from "@/hooks/useWallet"
 import { createDuelOnChain } from "@/lib/duelContract"
 import { getFriendlyErrorMessage } from "@/lib/walletErrors"
+import { getStoredRef } from "@/lib/referralClient"
 import { useFactoryState } from "@/hooks/useFactoryState"
 import { DuelTokenDTO } from "../../components/duel/types"
 import { PausedBanner } from "../../components/duel/PausedBanner"
@@ -61,9 +62,10 @@ export default function CreateDuelPage() {
     const bothPicked = Boolean(tokenA && tokenB)
     const paused = factory?.paused ?? false
     const belowMin = factory !== null && buyIn < factory.minBuyInUsd
-    const canSubmit = connected && bothPicked && buyIn > 0 && !belowMin && !paused && factory !== null && !submitting
+    const aboveMax = factory !== null && factory.maxBuyInUsd !== null && buyIn > factory.maxBuyInUsd
+    const canSubmit = connected && bothPicked && buyIn > 0 && !belowMin && !aboveMax && !paused && factory !== null && !submitting
     const pot = buyIn * 2
-    const winAmount = Math.round(pot * 0.8)
+    const winAmount = Math.round(pot * 0.9)
 
     async function handleSubmit() {
         if (!address || !tokenA || !tokenB) return
@@ -106,6 +108,7 @@ export default function CreateDuelPage() {
                     tokenASnapshot,
                     tokenBSnapshot,
                     txHash,
+                    refCode: getStoredRef(),
                 }),
             })
             const json = await res.json()
@@ -225,6 +228,7 @@ export default function CreateDuelPage() {
                         <input
                             type="number"
                             min={factory?.minBuyInUsd ?? 1}
+                            max={factory?.maxBuyInUsd ?? undefined}
                             value={buyIn}
                             onChange={(e) => setBuyIn(Number(e.target.value))}
                             inputMode="numeric"
@@ -233,7 +237,9 @@ export default function CreateDuelPage() {
                     </div>
 
                     <div className="flex gap-px bg-[var(--line)]">
-                        {QUICK_BUY_INS.filter((v) => !factory || v >= factory.minBuyInUsd).map((v) => (
+                        {QUICK_BUY_INS.filter(
+                            (v) => (!factory || v >= factory.minBuyInUsd) && (!factory?.maxBuyInUsd || v <= factory.maxBuyInUsd)
+                        ).map((v) => (
                             <button
                                 key={v}
                                 onClick={() => setBuyIn(v)}
@@ -249,8 +255,9 @@ export default function CreateDuelPage() {
                     </div>
                 </div>
                 {factory && (
-                    <p className={`font-mono text-xs ${belowMin ? "text-[var(--hot)]" : "text-[var(--faint)]"}`}>
-                        Minimum buy-in: ${factory.minBuyInUsd}
+                    <p className={`font-mono text-xs ${belowMin || aboveMax ? "text-[var(--hot)]" : "text-[var(--faint)]"}`}>
+                        Buy-in range: ${factory.minBuyInUsd}
+                        {factory.maxBuyInUsd !== null ? ` – $${factory.maxBuyInUsd}` : "+"}
                     </p>
                 )}
             </div>
@@ -287,7 +294,7 @@ export default function CreateDuelPage() {
                         <div className="text-white text-base font-semibold mt-0.5">${pot}</div>
                     </div>
                     <div>
-                        <div className="text-[var(--acid)]">Winner (80%)</div>
+                        <div className="text-[var(--acid)]">Winner (90%)</div>
                         <div className="text-[var(--acid)] text-base font-semibold mt-0.5">${winAmount}</div>
                     </div>
                 </div>

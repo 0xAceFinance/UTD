@@ -5,12 +5,27 @@ import { after } from 'next/server';
 import { WalletClusterGraph, isSuspectedSybilMatch } from '@mcapduel/risk';
 import { getLivePoolSamples } from '@/lib/dexScreenerSource';
 import { signSettlement } from '@/lib/oracleSigner';
+import type { ReferralSettlementTerms } from '@/lib/oracleSigner';
 import { submitSettlement } from '@/lib/settlementRelayer';
 import { toLobbySnapshot, applyLobby } from '@/lib/lobbyAdapter';
+import { computeReferralSnapshot, applyReferralSettlement } from '@/lib/referralAccount';
+import type { ReferralSnapshot } from '@/lib/referralAccount';
 import CombatRecord from '@/lib/models/CombatRecord';
 import WalletSighting from '@/lib/models/WalletSighting';
 import Duel from '@/lib/models/Duel';
 import type { IDuel, TokenSide, DeferredPayout } from '@/lib/models/Duel';
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
+
+/** Converts a plain-JS referral snapshot into the viem-typed terms signSettlement() needs. */
+function toSettlementTerms(snapshot: ReferralSnapshot): ReferralSettlementTerms {
+  return {
+    referrerA: (snapshot.creatorReferrerWallet as `0x${string}`) ?? ZERO_ADDRESS,
+    referrerABps: BigInt(snapshot.creatorReferrerBps),
+    referrerB: (snapshot.opponentReferrerWallet as `0x${string}`) ?? ZERO_ADDRESS,
+    referrerBBps: BigInt(snapshot.opponentReferrerBps),
+  };
+}
 
 /**
  * Minimum time between real pool fetches for one duel side. The live battle
@@ -196,9 +211,14 @@ export async function maybeSettle(duel: IDuel, { relay = true }: { relay?: boole
   }
 
   if (duel.escrowAddress) {
+    const referrals = await computeReferralSnapshot(duel.creatorWallet, duel.opponentWallet!);
     duel.status = 'SETTLING';
     duel.winnerSide = winnerSide;
-    duel.oracleSignature = await signSettlement(duel.escrowAddress as `0x${string}`, winnerSide);
+    duel.creatorReferrerWallet = referrals.creatorReferrerWallet;
+    duel.creatorReferrerBps = referrals.creatorReferrerBps;
+    duel.opponentReferrerWallet = referrals.opponentReferrerWallet;
+    duel.opponentReferrerBps = referrals.opponentReferrerBps;
+    duel.oracleSignature = await signSettlement(duel.escrowAddress as `0x${string}`, winnerSide, toSettlementTerms(referrals));
     await duel.save();
     if (relay) scheduleRelay(duel);
     return;
@@ -233,15 +253,33 @@ export async function retrySettlementSigning(duel: IDuel): Promise<void> {
   if (duel.status !== 'SETTLING' || !duel.escrowAddress || duel.oracleSignature) return;
 
   const winnerSide = duel.winnerSide ?? computeWinnerSide(duel);
-  const oracleSignature = await signSettlement(duel.escrowAddress as `0x${string}`, winnerSide);
+  // Nothing was persisted from any earlier failed attempt (see doc comment
+  // above), so this recomputes referral terms fresh rather than trusting
+  // anything already on `duel` -- fine, since no signature was ever
+  // successfully produced against a prior snapshot.
+  const referrals = await computeReferralSnapshot(duel.creatorWallet, duel.opponentWallet!);
+  const oracleSignature = await signSettlement(duel.escrowAddress as `0x${string}`, winnerSide, toSettlementTerms(referrals));
 
   const claimed = await Duel.findOneAndUpdate(
     { _id: duel._id, status: 'SETTLING', oracleSignature: { $exists: false } },
-    { $set: { winnerSide, oracleSignature } }
+    {
+      $set: {
+        winnerSide,
+        oracleSignature,
+        creatorReferrerWallet: referrals.creatorReferrerWallet,
+        creatorReferrerBps: referrals.creatorReferrerBps,
+        opponentReferrerWallet: referrals.opponentReferrerWallet,
+        opponentReferrerBps: referrals.opponentReferrerBps,
+      },
+    }
   );
   if (claimed) {
     duel.winnerSide = winnerSide;
     duel.oracleSignature = oracleSignature;
+    duel.creatorReferrerWallet = referrals.creatorReferrerWallet;
+    duel.creatorReferrerBps = referrals.creatorReferrerBps;
+    duel.opponentReferrerWallet = referrals.opponentReferrerWallet;
+    duel.opponentReferrerBps = referrals.opponentReferrerBps;
   }
 }
 
@@ -331,6 +369,24 @@ export async function finalizeSettlement(duel: IDuel, winnerSide: 0 | 1): Promis
   duel.loserPoints = Math.round(loserPoints);
   await duel.save();
 
+  // Referral crediting only applies to real on-chain duels: creatorReferrerBps/
+  // opponentReferrerBps are only ever populated (maybeSettle, above) when an
+  // actual settle() transaction pays them out. A legacy off-chain-only duel
+  // (no escrowAddress) never paid a referrer anything real, so crediting
+  // earnings here would be a phantom, unbacked number.
+  if (duel.escrowAddress) {
+    await applyReferralSettlement({
+      creatorWallet: duel.creatorWallet,
+      opponentWallet: duel.opponentWallet!,
+      buyInUsd: duel.buyInUsd,
+      creatorReferrerWallet: duel.creatorReferrerWallet,
+      creatorReferrerBps: duel.creatorReferrerBps ?? 0,
+      opponentReferrerWallet: duel.opponentReferrerWallet,
+      opponentReferrerBps: duel.opponentReferrerBps ?? 0,
+      awardPoints: awardFlatPoints,
+    });
+  }
+
   await applyPoints(winnerWallet, loserWallet, Math.round(winnerPoints), true);
   await applyPoints(loserWallet, winnerWallet, Math.round(loserPoints), false);
 }
@@ -348,5 +404,22 @@ async function applyPoints(wallet: string, opponent: string, points: number, won
   record.currentStreak = won ? Math.max(1, record.currentStreak + 1) : 0;
   record.recentOpponents = [...record.recentOpponents, opponent.toLowerCase()].slice(-50);
 
+  await record.save();
+}
+
+/**
+ * Flat points added straight to a wallet's lifetime total -- used for
+ * referral volume/earnings checkpoint bonuses (lib/referralAccount.ts),
+ * which are one-time milestone awards, not per-match results. Unlike
+ * applyPoints above, this never touches wins/losses/recentOpponents and
+ * isn't gated by opponent-diversity eligibility -- a checkpoint fires once
+ * per wallet ever (enforced by lib/referralAccount.ts's checkpoint-id
+ * tracking, not by anything here), so there's no farming vector to gate.
+ */
+async function awardFlatPoints(wallet: string, points: number): Promise<void> {
+  const record =
+    (await CombatRecord.findOne({ wallet: wallet.toLowerCase() })) ??
+    new CombatRecord({ wallet: wallet.toLowerCase() });
+  record.totalPoints += points;
   await record.save();
 }

@@ -18,6 +18,7 @@ vi.mock('viem', async (importOriginal) => {
 });
 
 const TX_HASH = `0x${'ab'.repeat(32)}` as `0x${string}`;
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 
 beforeEach(() => {
   getTransactionReceipt.mockReset();
@@ -161,6 +162,10 @@ describe('lib/chainVerify', () => {
           winner: ADDR.opponent,
           winnerAmount: 190_000_000_000_000_000_000n,
           platformAmount: 10_000_000_000_000_000_000n,
+          referrerA: ZERO_ADDRESS,
+          referrerAAmount: 0n,
+          referrerB: ZERO_ADDRESS,
+          referrerBAmount: 0n,
         },
       });
       getTransactionReceipt.mockResolvedValue(buildReceipt([log]));
@@ -175,7 +180,16 @@ describe('lib/chainVerify', () => {
         address: ADDR.escrow,
         abi: BattleEscrowAbi,
         eventName: 'Settled',
-        args: { winnerSide: 0, winner: ADDR.creator, winnerAmount: 160n, platformAmount: 40n },
+        args: {
+          winnerSide: 0,
+          winner: ADDR.creator,
+          winnerAmount: 160n,
+          platformAmount: 40n,
+          referrerA: ZERO_ADDRESS,
+          referrerAAmount: 0n,
+          referrerB: ZERO_ADDRESS,
+          referrerBAmount: 0n,
+        },
       });
       const deferred = buildLog({
         address: ADDR.escrow,
@@ -201,7 +215,16 @@ describe('lib/chainVerify', () => {
         address: ADDR.otherEscrow,
         abi: BattleEscrowAbi,
         eventName: 'Settled',
-        args: { winnerSide: 0, winner: ADDR.creator, winnerAmount: 1n, platformAmount: 1n },
+        args: {
+          winnerSide: 0,
+          winner: ADDR.creator,
+          winnerAmount: 1n,
+          platformAmount: 1n,
+          referrerA: ZERO_ADDRESS,
+          referrerAAmount: 0n,
+          referrerB: ZERO_ADDRESS,
+          referrerBAmount: 0n,
+        },
       });
       getTransactionReceipt.mockResolvedValue(buildReceipt([log]));
 

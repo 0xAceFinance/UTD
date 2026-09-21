@@ -113,6 +113,10 @@ export interface DuelOverrides {
   escrowAddress?: string;
   cancelledAt?: Date;
   flaggedSybil?: boolean;
+  creatorReferrerWallet?: string;
+  creatorReferrerBps?: number;
+  opponentReferrerWallet?: string;
+  opponentReferrerBps?: number;
 }
 
 /** Persists a Duel document in whatever status/shape a test needs, skipping the HTTP layer. */
@@ -133,6 +137,10 @@ export async function createDuel(overrides: DuelOverrides = {}) {
     escrowAddress: overrides.escrowAddress,
     cancelledAt: overrides.cancelledAt,
     flaggedSybil: overrides.flaggedSybil,
+    creatorReferrerWallet: overrides.creatorReferrerWallet?.toLowerCase(),
+    creatorReferrerBps: overrides.creatorReferrerBps,
+    opponentReferrerWallet: overrides.opponentReferrerWallet?.toLowerCase(),
+    opponentReferrerBps: overrides.opponentReferrerBps,
   });
   return doc;
 }

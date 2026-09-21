@@ -27,10 +27,10 @@ contract RedemptionVaultAdversarialTest is Test {
         rewardToken.mint(address(vault), 10_000_000e18);
 
         vm.prank(pointsOracle);
-        nft.addPoints(player, 30_000); // Gold tier, cap 8,000 pts/epoch
+        nft.addPoints(player, 100_000); // Gold tier, cap 8,000 pts/epoch
 
         vm.prank(pointsOracle);
-        nft.addPoints(player2, 30_000);
+        nft.addPoints(player2, 100_000);
     }
 
     // ==================== access control ====================
@@ -272,7 +272,7 @@ contract RedemptionVaultAdversarialTest is Test {
         vm.prank(player2);
         vm.expectRevert("rewards pool exhausted");
         small.redeem(1); // would promise tokens the pool doesn't hold
-        assertEq(nft.availablePoints(player2), 30_000); // points not burned
+        assertEq(nft.availablePoints(player2), 100_000); // points not burned
     }
 
     function test_claimReleasesCommittedTokens() public {

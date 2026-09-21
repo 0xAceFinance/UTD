@@ -45,9 +45,16 @@ export interface DuelDTO {
     /** Real escrow clone address (Contracts/src/duel/BattleEscrow.sol). Absent on
      * legacy duels created before on-chain integration existed. */
     escrowAddress?: string
-    /** Oracle signature ready for anyone to submit as settle(winnerSide, oracleSignature)
+    /** Oracle signature ready for anyone to submit as
+     * settle(winnerSide, creatorReferrerWallet ?? 0x0, creatorReferrerBps ?? 0,
+     * opponentReferrerWallet ?? 0x0, opponentReferrerBps ?? 0, oracleSignature)
      * on the escrow contract -- present once status is SETTLING. */
     oracleSignature?: string
+    /** Referrer wallet/rate (bps) snapshotted for each side at signing time -- see lib/oracleSigner.ts. Absent/0 means no referrer on that side. */
+    creatorReferrerWallet?: string
+    creatorReferrerBps?: number
+    opponentReferrerWallet?: string
+    opponentReferrerBps?: number
     /** PayoutDeferred events from the settle() tx: payouts the stake token refused
      * (e.g. a blacklisted address), credited to owed[to] on the escrow instead. */
     deferredPayouts?: { to: string; amount: string }[]

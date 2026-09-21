@@ -26,8 +26,13 @@ import "./IBattleEscrow.sol";
  * below) specifically so a compromised or malicious owner can't redirect a
  * live duel's payout instantly and unnoticed — anyone watching
  * OracleSignerRotationProposed has ORACLE_SIGNER_TIMELOCK_DELAY to react.
- * platformTreasury rotation only redirects the platform's own 20% cut, not
- * any player's funds, so it stays instant.
+ * platformTreasury rotation only redirects the platform's own cut, not any
+ * player's funds, so it stays instant -- same for winnerBps/maxReferrerBps
+ * (Section-below setters): they retune the fee split's economics, not who
+ * wins a given duel, and winnerBps is bounded at MIN_WINNER_BPS so they can
+ * never be tuned toward zero. minBuyIn/maxBuyIn are likewise instant and
+ * only ever change what future createDuel() calls accept, never anything
+ * about a duel already in flight.
  */
 /// @dev Emergency pause (owner-only, instant): for a leaked or misbehaving
 /// oracle key, which the 24h signer timelock can't stop in time. While paused,
@@ -55,6 +60,34 @@ contract BattleEscrowFactory is Ownable, Pausable {
     /// awarded per duel with a floor that ignores stake size, so without this a
     /// pair of sybil wallets could farm points with near-zero-value (e.g. 1 wei) duels.
     uint256 public minBuyIn;
+    /// @dev Largest buyIn createDuel() accepts, in stake-token units. 0 means
+    /// uncapped (the default, matching behavior before this field existed).
+    uint256 public maxBuyIn;
+
+    /// @dev Winner's fixed share of the pot at settlement, in bps of 10000 --
+    /// read live by BattleEscrow.settle() (Contracts/src/duel/BattleEscrow.sol)
+    /// rather than baked in as a constant, so the platform's take can be
+    /// retuned without redeploying the escrow implementation or the factory.
+    /// Floored at MIN_WINNER_BPS (see setWinnerBps) so a compromised or
+    /// malicious owner can tune fees within a real range but can never zero
+    /// out the winner's payout -- the instant-vs-timelocked distinction this
+    /// contract already draws for platformTreasury vs oracleSigner applies
+    /// here too: this is an economic parameter, not a redirection of a live
+    /// duel's outcome, so it stays instant like platformTreasury.
+    uint256 public winnerBps = 9000;
+    /// @dev Hard ceiling on either referrer's cut in BattleEscrow.settle(), in
+    /// bps of one side's buyIn -- same live-read, retunable-without-redeploy
+    /// reasoning as winnerBps. Must always leave winnerBps + 2x this value
+    /// at or under 10000 (see setWinnerBps/setMaxReferrerBps), or a duel with
+    /// two maxed-out referrers would make settle()'s pot arithmetic underflow
+    /// and revert.
+    uint256 public maxReferrerBps = 500;
+
+    /// @dev winnerBps can never be set below this -- keeps a compromised or
+    /// malicious owner from tuning the winner's payout down toward zero via
+    /// this instant (non-timelocked) setter. 5000 = 50%, comfortably below
+    /// the 9000 (90%) product default but still a real floor.
+    uint256 public constant MIN_WINNER_BPS = 5_000;
 
     address public pendingOracleSigner;
     uint256 public pendingOracleSignerEffectiveAt;
@@ -80,6 +113,9 @@ contract BattleEscrowFactory is Ownable, Pausable {
     event PlatformTreasuryUpdated(address indexed treasury);
     event ApprovedStakeTokenUpdated(address indexed stakeToken);
     event MinBuyInUpdated(uint256 minBuyIn);
+    event MaxBuyInUpdated(uint256 maxBuyIn);
+    event WinnerBpsUpdated(uint256 winnerBps);
+    event MaxReferrerBpsUpdated(uint256 maxReferrerBps);
 
     constructor(address _escrowImplementation, address _oracleSigner, address _platformTreasury, address _approvedStakeToken, uint256 _minBuyIn)
         Ownable(msg.sender)
@@ -108,6 +144,7 @@ contract BattleEscrowFactory is Ownable, Pausable {
         require(creatorSide == 0 || creatorSide == 1, "bad side");
         require(durationSeconds >= MIN_DURATION && durationSeconds <= MAX_DURATION, "duration out of range");
         require(buyIn >= minBuyIn, "bad buyIn");
+        require(maxBuyIn == 0 || buyIn <= maxBuyIn, "buyIn above maximum");
 
         duel = escrowImplementation.clone();
 
@@ -181,8 +218,34 @@ contract BattleEscrowFactory is Ownable, Pausable {
 
     function setMinBuyIn(uint256 _minBuyIn) external onlyOwner {
         require(_minBuyIn > 0, "bad min buyIn");
+        require(maxBuyIn == 0 || _minBuyIn <= maxBuyIn, "min buyIn above current max");
         minBuyIn = _minBuyIn;
         emit MinBuyInUpdated(_minBuyIn);
+    }
+
+    /// @dev 0 removes the cap entirely (uncapped, the default).
+    function setMaxBuyIn(uint256 _maxBuyIn) external onlyOwner {
+        require(_maxBuyIn == 0 || _maxBuyIn >= minBuyIn, "max buyIn below current min");
+        maxBuyIn = _maxBuyIn;
+        emit MaxBuyInUpdated(_maxBuyIn);
+    }
+
+    /// @dev Instant, not timelocked (see winnerBps's own doc comment for why).
+    /// Bounded to [MIN_WINNER_BPS, 10000 - maxReferrerBps] so it can never
+    /// underflow settle()'s pot math nor be tuned toward zero.
+    function setWinnerBps(uint256 _winnerBps) external onlyOwner {
+        require(_winnerBps >= MIN_WINNER_BPS, "winnerBps below floor");
+        require(_winnerBps + maxReferrerBps <= 10_000, "winnerBps leaves no room for maxReferrerBps");
+        winnerBps = _winnerBps;
+        emit WinnerBpsUpdated(_winnerBps);
+    }
+
+    /// @dev Bounded so winnerBps + maxReferrerBps never exceeds 10000 -- see
+    /// winnerBps's doc comment for what that protects against.
+    function setMaxReferrerBps(uint256 _maxReferrerBps) external onlyOwner {
+        require(winnerBps + _maxReferrerBps <= 10_000, "maxReferrerBps leaves winnerBps no room");
+        maxReferrerBps = _maxReferrerBps;
+        emit MaxReferrerBpsUpdated(_maxReferrerBps);
     }
 
     function pause() external onlyOwner {

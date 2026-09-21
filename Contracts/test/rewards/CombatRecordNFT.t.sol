@@ -46,13 +46,13 @@ contract CombatRecordNFTTest is Test {
 
     function test_tiersMatchTheSpecThresholds() public {
         vm.startPrank(pointsOracle);
-        nft.addPoints(player, 4_999);
+        nft.addPoints(player, 14_999);
         assertEq(nft.tierOf(player), "Bronze");
-        nft.addPoints(player, 1); // crosses to 5,000
+        nft.addPoints(player, 1); // crosses to 15,000
         assertEq(nft.tierOf(player), "Silver");
-        nft.addPoints(player, 20_000); // 25,000
+        nft.addPoints(player, 85_000); // 100,000
         assertEq(nft.tierOf(player), "Gold");
-        nft.addPoints(player, 75_000); // 100,000
+        nft.addPoints(player, 400_000); // 500,000
         assertEq(nft.tierOf(player), "Diamond");
         vm.stopPrank();
     }

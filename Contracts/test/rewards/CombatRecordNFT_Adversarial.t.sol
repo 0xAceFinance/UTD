@@ -102,37 +102,37 @@ contract CombatRecordNFTAdversarialTest is Test {
 
     function test_tierBoundary_oneBelowSilver_isBronze() public {
         vm.prank(pointsOracle);
-        nft.addPoints(player, 4_999);
+        nft.addPoints(player, 14_999);
         assertEq(nft.tierOf(player), "Bronze");
     }
 
     function test_tierBoundary_exactlySilver() public {
         vm.prank(pointsOracle);
-        nft.addPoints(player, 5_000);
+        nft.addPoints(player, 15_000);
         assertEq(nft.tierOf(player), "Silver");
     }
 
     function test_tierBoundary_oneBelowGold_isSilver() public {
         vm.prank(pointsOracle);
-        nft.addPoints(player, 24_999);
+        nft.addPoints(player, 99_999);
         assertEq(nft.tierOf(player), "Silver");
     }
 
     function test_tierBoundary_exactlyGold() public {
         vm.prank(pointsOracle);
-        nft.addPoints(player, 25_000);
+        nft.addPoints(player, 100_000);
         assertEq(nft.tierOf(player), "Gold");
     }
 
     function test_tierBoundary_oneBelowDiamond_isGold() public {
         vm.prank(pointsOracle);
-        nft.addPoints(player, 99_999);
+        nft.addPoints(player, 499_999);
         assertEq(nft.tierOf(player), "Gold");
     }
 
     function test_tierBoundary_exactlyDiamond() public {
         vm.prank(pointsOracle);
-        nft.addPoints(player, 100_000);
+        nft.addPoints(player, 500_000);
         assertEq(nft.tierOf(player), "Diamond");
     }
 
@@ -147,7 +147,7 @@ contract CombatRecordNFTAdversarialTest is Test {
         nft.markRedeemed(player, 7_000);
 
         assertEq(nft.totalPoints(player), totalBefore); // unaffected -> tier can never regress
-        assertEq(nft.tierOf(player), "Silver"); // still >= 5,000 even after "spending" points
+        assertEq(nft.tierOf(player), "Bronze"); // still < 15,000 even after "spending" points
     }
 
     function test_contractWalletWithoutERC721ReceiverStillGetsPoints() public {

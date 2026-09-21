@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation"
 import { useWallet } from "@/hooks/useWallet"
 import { joinDuelOnChain } from "@/lib/duelContract"
 import { getFriendlyErrorMessage } from "@/lib/walletErrors"
+import { getStoredRef } from "@/lib/referralClient"
 import { useFactoryState } from "@/hooks/useFactoryState"
 import { PausedBanner } from "./duel/PausedBanner"
 import { SideTag, StatusTag, TierBadge } from "./duel/SideTag"
@@ -140,7 +141,7 @@ export default function Dashboard() {
             const res = await fetch(`/api/duels/${duelId}/join`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ opponentWallet: address, txHash }),
+                body: JSON.stringify({ opponentWallet: address, txHash, refCode: getStoredRef() }),
             })
             const json = await res.json()
             if (!json.success) {
@@ -309,7 +310,7 @@ export default function Dashboard() {
                             const myToken = mySide === 0 ? pendingJoin.tokenA : pendingJoin.tokenB
                             const theirToken = mySide === 0 ? pendingJoin.tokenB : pendingJoin.tokenA
                             const pot = pendingJoin.buyInUsd * 2
-                            const winAmount = Math.round(pot * 0.8)
+                            const winAmount = Math.round(pot * 0.9)
                             const busy = joiningId === pendingJoin._id
 
                             return (
@@ -344,7 +345,7 @@ export default function Dashboard() {
                                         <Row k="Stake" v={`$${pendingJoin.buyInUsd}`} />
                                         <Row k="Pot" v={`$${pot}`} />
                                         <Row k="Round" v={`${Math.round(pendingJoin.durationSeconds / 60)} min`} />
-                                        <Row k="If you win (80%)" v={`$${winAmount}`} accent />
+                                        <Row k="If you win (90%)" v={`$${winAmount}`} accent />
                                     </dl>
 
                                     <div className="mt-5 grid grid-cols-2 gap-2.5">

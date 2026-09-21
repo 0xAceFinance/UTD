@@ -10,6 +10,7 @@ import { getClientIp } from '@/lib/requestSignals';
 import { getFundingSource } from '@/lib/fundingSource';
 import { checkCanCreateLobby } from '@/lib/duelGuards';
 import { verifyDuelCreated } from '@/lib/chainVerify';
+import { attributeReferral } from '@/lib/referralAttribution';
 import { success, failure } from '@/utils/response';
 
 export async function GET(req: NextRequest) {
@@ -57,7 +58,7 @@ function isValidSnapshot(s: unknown): s is {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { creatorWallet, tokenASymbol, tokenBSymbol, tokenASnapshot, tokenBSnapshot, txHash } = body;
+        const { creatorWallet, tokenASymbol, tokenBSymbol, tokenASnapshot, tokenBSnapshot, txHash, refCode } = body;
 
         if (!creatorWallet || !tokenASymbol || !tokenBSymbol || !txHash) {
             return failure('creatorWallet, tokenASymbol, tokenBSymbol, and txHash are all required', 400);
@@ -162,6 +163,7 @@ export async function POST(req: NextRequest) {
                 ...(fundedBy ? { fundedBy } : {}),
             });
         }
+        await attributeReferral(creatorWallet, refCode);
 
         return success(duel, 201);
     } catch (err) {

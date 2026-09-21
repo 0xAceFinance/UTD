@@ -309,4 +309,86 @@ contract BattleEscrowFactoryAdversarialTest is Test {
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", rando));
         factory.setMinBuyIn(1e18);
     }
+
+    // ==================== maxBuyIn ====================
+
+    function test_maxBuyInDefaultsToUncapped() public view {
+        assertEq(factory.maxBuyIn(), 0);
+    }
+
+    function test_createDuelRejectsBuyInAboveMaximum() public {
+        stakeToken.mint(address(this), 1_000e18);
+        stakeToken.approve(address(factory), type(uint256).max);
+
+        factory.setMaxBuyIn(500e18);
+        vm.expectRevert("buyIn above maximum");
+        factory.createDuel(address(stakeToken), 500e18 + 1, 0, DURATION, "A", "B");
+
+        // Exactly at the cap still succeeds.
+        factory.createDuel(address(stakeToken), 500e18, 0, DURATION, "A", "B");
+    }
+
+    function test_setMaxBuyInZeroRemovesTheCap() public {
+        stakeToken.mint(address(this), 1_000e18);
+        stakeToken.approve(address(factory), type(uint256).max);
+
+        factory.setMaxBuyIn(500e18);
+        factory.setMaxBuyIn(0);
+        // No longer bounded -- a buyIn far above the old cap now succeeds.
+        factory.createDuel(address(stakeToken), 500e18 + 1, 0, DURATION, "A", "B");
+    }
+
+    function test_setMaxBuyInRejectsBelowCurrentMinAndNonOwner() public {
+        factory.setMinBuyIn(10e18);
+        vm.expectRevert("max buyIn below current min");
+        factory.setMaxBuyIn(5e18);
+
+        vm.prank(rando);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", rando));
+        factory.setMaxBuyIn(100e18);
+    }
+
+    function test_setMinBuyInRejectsAboveCurrentMax() public {
+        factory.setMaxBuyIn(100e18);
+        vm.expectRevert("min buyIn above current max");
+        factory.setMinBuyIn(200e18);
+    }
+
+    // ==================== winnerBps / maxReferrerBps (fee configuration) ====================
+
+    function test_winnerBpsAndMaxReferrerBpsDefaults() public view {
+        assertEq(factory.winnerBps(), 9000);
+        assertEq(factory.maxReferrerBps(), 500);
+    }
+
+    function test_setWinnerBpsRejectsBelowFloorAndAboveHeadroomAndNonOwner() public {
+        vm.expectRevert("winnerBps below floor");
+        factory.setWinnerBps(4_999);
+
+        // maxReferrerBps defaults to 500 -- 9600 would leave only 400bps of
+        // headroom, not enough for both referrers' worst case.
+        vm.expectRevert("winnerBps leaves no room for maxReferrerBps");
+        factory.setWinnerBps(9_600);
+
+        vm.prank(rando);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", rando));
+        factory.setWinnerBps(9_100);
+
+        // Boundary: exactly winnerBps + maxReferrerBps == 10000 succeeds.
+        factory.setWinnerBps(9_500);
+        assertEq(factory.winnerBps(), 9_500);
+    }
+
+    function test_setMaxReferrerBpsRejectsLeavingNoRoomForWinnerBpsAndNonOwner() public {
+        // winnerBps defaults to 9000 -- 1001 would push the combined total over 10000.
+        vm.expectRevert("maxReferrerBps leaves winnerBps no room");
+        factory.setMaxReferrerBps(1_001);
+
+        vm.prank(rando);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", rando));
+        factory.setMaxReferrerBps(700);
+
+        factory.setMaxReferrerBps(1_000);
+        assertEq(factory.maxReferrerBps(), 1_000);
+    }
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Gift, Plus } from "lucide-react"
+import { Gift, Plus, Share2 } from "lucide-react"
 import { useWallet } from "@/hooks/useWallet"
 import { useAirdrop } from "./airdrop/useAirdrop"
 import { NAV, isActive } from "./nav"
@@ -52,6 +52,18 @@ export default function Sidebar() {
                         </Link>
                     )
                 })}
+
+                {/* Not in NAV: BottomNav's mobile grid is a fixed 5 columns built
+                    from NAV's length, so this lives here plus Header's mobile
+                    chip instead of growing that grid. */}
+                <Link
+                    href="/referrals"
+                    aria-current={pathname.startsWith("/referrals") ? "page" : undefined}
+                    className={`app-nav-item ${pathname.startsWith("/referrals") ? "is-active" : ""}`}
+                >
+                    <Share2 className="h-4 w-4 flex-none" />
+                    Referrals
+                </Link>
             </nav>
 
             {/* Airdrop: deliberately not a plain nav row. */}

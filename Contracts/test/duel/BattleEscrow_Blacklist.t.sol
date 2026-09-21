@@ -60,8 +60,19 @@ contract BattleEscrowBlacklistTest is Test {
         vm.stopPrank();
     }
 
+    /// @dev Void-only signer -- voidActive()'s message shape never grew referrer fields.
     function _sign(uint8 marker) internal view returns (bytes memory) {
         bytes32 digest = MessageHashUtils.toEthSignedMessageHash(keccak256(abi.encodePacked(address(duel), marker, block.chainid)));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(oracleKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// @dev No-referrer settle signer -- these tests exercise blacklist/deferred-payout
+    /// behavior, not referral payouts, so both referrer slots are always empty.
+    function _signSettle(uint8 winnerSide) internal view returns (bytes memory) {
+        bytes32 digest = MessageHashUtils.toEthSignedMessageHash(
+            keccak256(abi.encodePacked(address(duel), winnerSide, address(0), uint256(0), address(0), uint256(0), block.chainid))
+        );
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(oracleKey, digest);
         return abi.encodePacked(r, s, v);
     }
@@ -70,12 +81,12 @@ contract BattleEscrowBlacklistTest is Test {
         usd.setBlocked(creator, true);
         vm.warp(block.timestamp + DURATION);
 
-        duel.settle(0, _sign(0));
+        duel.settle(0, address(0), 0, address(0), 0, _signSettle(0));
 
         assertEq(uint8(duel.status()), uint8(BattleEscrow.Status.Settled));
-        assertEq(usd.balanceOf(treasury), 40e18);
-        assertEq(duel.owed(creator), 160e18);
-        assertEq(usd.balanceOf(address(duel)), 160e18);
+        assertEq(usd.balanceOf(treasury), 20e18);
+        assertEq(duel.owed(creator), 180e18);
+        assertEq(usd.balanceOf(address(duel)), 180e18);
     }
 
     function test_refundStaleWithBlacklistedPlayerStillRefundsTheOtherPlayer() public {
@@ -100,7 +111,7 @@ contract BattleEscrowBlacklistTest is Test {
     function test_deferredPayoutIsWithdrawableOnceUnblocked() public {
         usd.setBlocked(creator, true);
         vm.warp(block.timestamp + DURATION);
-        duel.settle(0, _sign(0));
+        duel.settle(0, address(0), 0, address(0), 0, _signSettle(0));
 
         vm.prank(creator);
         vm.expectRevert("blacklisted");
@@ -110,7 +121,7 @@ contract BattleEscrowBlacklistTest is Test {
         vm.prank(creator);
         duel.withdraw();
 
-        assertEq(usd.balanceOf(creator), 160e18);
+        assertEq(usd.balanceOf(creator), 180e18);
         assertEq(duel.owed(creator), 0);
         assertEq(usd.balanceOf(address(duel)), 0);
     }
@@ -124,7 +135,7 @@ contract BattleEscrowBlacklistTest is Test {
     function test_withdrawCannotBeUsedTwice() public {
         usd.setBlocked(creator, true);
         vm.warp(block.timestamp + DURATION);
-        duel.settle(0, _sign(0));
+        duel.settle(0, address(0), 0, address(0), 0, _signSettle(0));
         usd.setBlocked(creator, false);
 
         vm.startPrank(creator);
@@ -136,10 +147,10 @@ contract BattleEscrowBlacklistTest is Test {
 
     function test_normalSettlePushesDirectlyAndOwesNothing() public {
         vm.warp(block.timestamp + DURATION);
-        duel.settle(1, _sign(1));
+        duel.settle(1, address(0), 0, address(0), 0, _signSettle(1));
 
-        assertEq(usd.balanceOf(opponent), 160e18);
-        assertEq(usd.balanceOf(treasury), 40e18);
+        assertEq(usd.balanceOf(opponent), 180e18);
+        assertEq(usd.balanceOf(treasury), 20e18);
         assertEq(duel.owed(opponent), 0);
     }
 

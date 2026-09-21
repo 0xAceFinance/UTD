@@ -143,10 +143,15 @@ export default function DuelDetailPage() {
         }
         setClaiming(true)
         try {
+            const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
             const txHash = await settleDuelOnChain(
                 duel.escrowAddress as `0x${string}`,
                 duel.winnerSide,
-                duel.oracleSignature as `0x${string}`
+                duel.oracleSignature as `0x${string}`,
+                (duel.creatorReferrerWallet as `0x${string}`) ?? ZERO_ADDRESS,
+                duel.creatorReferrerBps ?? 0,
+                (duel.opponentReferrerWallet as `0x${string}`) ?? ZERO_ADDRESS,
+                duel.opponentReferrerBps ?? 0
             )
             const res = await fetch(`/api/duels/${duel._id}/confirm-settlement`, {
                 method: "POST",
@@ -376,7 +381,7 @@ export default function DuelDetailPage() {
                 </div>
                 <div className="mt-2 utd-body text-xs text-[var(--dim)]">
                     {settled || settling
-                        ? "80% of pot paid out to winner · 20% protocol burn"
+                        ? "90% of pot paid out to winner · remainder to referrals & platform"
                         : "Buy-only round. Sustained peaks hold after 30s dwell time."}
                 </div>
             </div>
@@ -410,7 +415,7 @@ export default function DuelDetailPage() {
                                 YOU WON! CLAIM YOUR WINNINGS
                             </p>
                             <p className="utd-body text-xs text-[var(--dim)] max-w-md mx-auto">
-                                Oracle signature verified. As the winner, trigger on-chain settlement to receive your 80% pot payout (${(duel.buyInUsd * 2 * 0.8).toFixed(0)} USD).
+                                Oracle signature verified. As the winner, trigger on-chain settlement to receive your 90% pot payout (${(duel.buyInUsd * 2 * 0.9).toFixed(0)} USD).
                             </p>
                             <div className="pt-1">
                                 <button

@@ -11,6 +11,7 @@ import { toLobbySnapshot, applyLobby } from '@/lib/lobbyAdapter';
 import { getClientIp, getClientCountry } from '@/lib/requestSignals';
 import { getFundingSource } from '@/lib/fundingSource';
 import { BLOCKED_COUNTRY_CODES } from '@/lib/riskConfig';
+import { attributeReferral } from '@/lib/referralAttribution';
 import { success, failure } from '@/utils/response';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -18,7 +19,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const { id } = await params;
         if (!Types.ObjectId.isValid(id)) return failure('invalid duel id', 400);
 
-        const { opponentWallet, txHash } = await req.json();
+        const { opponentWallet, txHash, refCode } = await req.json();
         if (!opponentWallet) return failure('opponentWallet is required', 400);
 
         await connectToDatabase();
@@ -102,6 +103,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
                 ...(fundedBy ? { fundedBy } : {}),
             });
         }
+        await attributeReferral(opponent, refCode);
 
         return success(duel);
     } catch (err) {

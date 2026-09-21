@@ -104,11 +104,23 @@ async function requireStakeBalance(wallet: `0x${string}`, buyInUsd: number): Pro
 /**
  * Live factory gates the UI must respect before asking for a signature:
  * createDuel()/joinDuel() revert while paused, and createDuel() reverts
- * "bad buyIn" below minBuyIn. minBuyInUsd is minBuyIn in whole stake-token
- * units (the stake token is a dollar stablecoin).
+ * "bad buyIn"/"buyIn above maximum" outside [minBuyIn, maxBuyIn]. Both *Usd
+ * fields are in whole stake-token units (the stake token is a dollar
+ * stablecoin). maxBuyInUsd is `null` when the factory has no cap set (the
+ * default -- BattleEscrowFactory.maxBuyIn() reads 0, meaning uncapped).
+ * winnerBps/maxReferrerBps are owner-tunable on the factory too
+ * (BattleEscrowFactory.sol's setWinnerBps/setMaxReferrerBps) -- surfaced here
+ * so UI copy showing the payout split never hardcodes a split that could
+ * drift from what's actually configured on-chain.
  */
-export async function getFactoryState(): Promise<{ paused: boolean; minBuyInUsd: number }> {
-    const [paused, minBuyIn, decimals] = await Promise.all([
+export async function getFactoryState(): Promise<{
+    paused: boolean;
+    minBuyInUsd: number;
+    maxBuyInUsd: number | null;
+    winnerBps: number;
+    maxReferrerBps: number;
+}> {
+    const [paused, minBuyIn, maxBuyIn, winnerBps, maxReferrerBps, decimals] = await Promise.all([
         readContract(wagmiConfig, {
             chainId: CONTRACTS.chainId,
             address: CONTRACTS.battleEscrowFactory,
@@ -121,9 +133,33 @@ export async function getFactoryState(): Promise<{ paused: boolean; minBuyInUsd:
             abi: BattleEscrowFactoryAbi,
             functionName: 'minBuyIn',
         }) as Promise<bigint>,
+        readContract(wagmiConfig, {
+            chainId: CONTRACTS.chainId,
+            address: CONTRACTS.battleEscrowFactory,
+            abi: BattleEscrowFactoryAbi,
+            functionName: 'maxBuyIn',
+        }) as Promise<bigint>,
+        readContract(wagmiConfig, {
+            chainId: CONTRACTS.chainId,
+            address: CONTRACTS.battleEscrowFactory,
+            abi: BattleEscrowFactoryAbi,
+            functionName: 'winnerBps',
+        }) as Promise<bigint>,
+        readContract(wagmiConfig, {
+            chainId: CONTRACTS.chainId,
+            address: CONTRACTS.battleEscrowFactory,
+            abi: BattleEscrowFactoryAbi,
+            functionName: 'maxReferrerBps',
+        }) as Promise<bigint>,
         getStakeTokenDecimals(),
     ]);
-    return { paused, minBuyInUsd: Number(formatUnits(minBuyIn, decimals)) };
+    return {
+        paused,
+        minBuyInUsd: Number(formatUnits(minBuyIn, decimals)),
+        maxBuyInUsd: maxBuyIn > 0n ? Number(formatUnits(maxBuyIn, decimals)) : null,
+        winnerBps: Number(winnerBps),
+        maxReferrerBps: Number(maxReferrerBps),
+    };
 }
 
 async function ensureApproval(owner: `0x${string}`, amountWei: bigint): Promise<void> {
@@ -154,9 +190,10 @@ export async function createDuelOnChain(params: {
     tokenASymbol: string;
     tokenBSymbol: string;
 }): Promise<`0x${string}`> {
-    const { paused, minBuyInUsd } = await getFactoryState();
+    const { paused, minBuyInUsd, maxBuyInUsd } = await getFactoryState();
     if (paused) throw new Error('Duels are paused right now. Try again later.');
     if (params.buyInUsd < minBuyInUsd) throw new Error(`Minimum buy-in is $${minBuyInUsd}.`);
+    if (maxBuyInUsd !== null && params.buyInUsd > maxBuyInUsd) throw new Error(`Maximum buy-in is $${maxBuyInUsd}.`);
     await requireStakeBalance(params.creator, params.buyInUsd);
 
     const amountWei = parseUnits(String(params.buyInUsd), await getStakeTokenDecimals());
@@ -220,18 +257,26 @@ export async function expireDuelOnChain(escrowAddress: `0x${string}`): Promise<`
     return hash;
 }
 
-/** Permissionless on the contract -- anyone holding the oracle's signature can submit it. */
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
+
+/** Permissionless on the contract -- anyone holding the oracle's signature can submit it.
+ * referrerA/B must be exactly what was signed into `signature` (lib/oracleSigner.ts) --
+ * a mismatch fails the on-chain signature check, it never silently pays the wrong party. */
 export async function settleDuelOnChain(
     escrowAddress: `0x${string}`,
     winnerSide: 0 | 1,
-    signature: `0x${string}`
+    signature: `0x${string}`,
+    referrerA: `0x${string}` = ZERO_ADDRESS,
+    referrerABps: number = 0,
+    referrerB: `0x${string}` = ZERO_ADDRESS,
+    referrerBBps: number = 0
 ): Promise<`0x${string}`> {
     const hash = await writeContract(wagmiConfig, {
         chainId: CONTRACTS.chainId,
         address: escrowAddress,
         abi: BattleEscrowAbi,
         functionName: 'settle',
-        args: [winnerSide, signature],
+        args: [winnerSide, referrerA, BigInt(referrerABps), referrerB, BigInt(referrerBBps), signature],
     });
     await waitForTransactionReceipt(wagmiConfig, { chainId: CONTRACTS.chainId, hash });
     return hash;

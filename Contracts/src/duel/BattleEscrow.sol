@@ -36,6 +36,20 @@ contract BattleEscrow is ReentrancyGuard {
 
     uint256 public constant MAX_OPEN_WINDOW = 5 minutes;
 
+    /// @dev Winner's share of the pot at settlement and the hard ceiling on
+    /// either referrer's cut are read live from the factory at settle() time
+    /// (IBattleEscrowFactory.winnerBps()/maxReferrerBps()) rather than baked
+    /// in here as constants -- so the platform's fee split can be retuned by
+    /// the factory owner (BattleEscrowFactory.setWinnerBps/setMaxReferrerBps)
+    /// without redeploying this implementation or any existing duel clone.
+    /// Unlike the referrer cuts themselves, neither value varies with the
+    /// signed payload -- the contract enforces both directly (winnerBps by
+    /// construction, maxReferrerBps via the "rate too high" requires below)
+    /// so a compromised or malicious oracle key can never shortchange the
+    /// winner or exceed the referrer ceiling currently configured on the
+    /// factory, only trade off how what's left of the pot splits between the
+    /// platform and up to two referrers within that ceiling.
+
     /// @dev How long past endTime an Active duel must sit unsettled before
     /// refundStale() becomes callable — see refundStale() below. refundStale()
     /// needs no signature, so once it opens the losing player can use it to
@@ -84,7 +98,16 @@ contract BattleEscrow is ReentrancyGuard {
     event Activated(address indexed opponent, uint256 startTime, uint256 endTime);
     event Cancelled(address indexed by);
     event Expired();
-    event Settled(uint8 winnerSide, address indexed winner, uint256 winnerAmount, uint256 platformAmount);
+    event Settled(
+        uint8 winnerSide,
+        address indexed winner,
+        uint256 winnerAmount,
+        uint256 platformAmount,
+        address indexed referrerA,
+        uint256 referrerAAmount,
+        address indexed referrerB,
+        uint256 referrerBAmount
+    );
     event Voided();
     event RefundedStale();
     event PayoutDeferred(address indexed to, uint256 amount);
@@ -173,41 +196,110 @@ contract BattleEscrow is ReentrancyGuard {
     }
 
     /**
-     * @dev Settles the match 80% to the winner / 20% to the platform. Anyone
-     * may submit this transaction — what authorizes it is `signature`, an
-     * ECDSA signature from settlementSigner (the factory's oracleSigner
-     * as of activate()) over (this contract, _winnerSide, chainid). That is the "permissionless
-     * fallback": if the platform's own keeper bot is down, any player (or
-     * anyone else holding the signed result) can still push settlement
-     * through. chainid is folded into the signed message so a settlement
-     * signature from one chain can never be replayed on another (relevant if
-     * this is ever deployed to more than one chain from the same deployer —
-     * plain CREATE clone addresses could otherwise coincide across chains).
+     * @dev Settles the match: the factory's current winnerBps to the winner
+     * (fixed per settlement, read live from the factory -- see the doc
+     * comment above the SettlementAmounts struct below), up to the factory's
+     * current maxReferrerBps each to a referrer standing behind the creator
+     * and/or the opponent (one referrer per player, paid on that player's
+     * own stake regardless of who won), and the platform keeps whatever's
+     * left. Anyone may submit this transaction — what authorizes it is
+     * `signature`, an ECDSA signature from settlementSigner (the factory's
+     * oracleSigner as of activate()) over (this contract, _winnerSide,
+     * _referrerA, _referrerABps, _referrerB, _referrerBBps, chainid). That is
+     * the "permissionless fallback": if the platform's own keeper bot is
+     * down, any player (or anyone else holding the signed result) can still
+     * push settlement through. chainid is folded into the signed message so
+     * a settlement signature from one chain can never be replayed on another
+     * (relevant if this is ever deployed to more than one chain from the
+     * same deployer — plain CREATE clone addresses could otherwise coincide
+     * across chains).
+     *
+     * _referrerA/_referrerABps is the creator's referrer and their tier rate;
+     * _referrerB/_referrerBBps is the opponent's. Pass address(0) (bps
+     * ignored) for a side with no referrer. The backend computes each
+     * referrer's current tier off-chain and signs it in, but the factory's
+     * maxReferrerBps ceiling is enforced here regardless of what's signed —
+     * see the "referrer rate too high" requires below.
      */
-    function settle(uint8 _winnerSide, bytes calldata signature) external nonReentrant {
+    /// @dev Grouped so settle() only ever has one local referencing all four
+    /// amounts (a memory pointer) instead of four separate stack slots --
+    /// with six settle() parameters plus the signature-recovery locals,
+    /// keeping four more named uint256s live through to the emit at the end
+    /// overflows the legacy codegen's 16-slot stack window ("stack too
+    /// deep"). Computing them in a separate function, referenced by one
+    /// struct pointer here, keeps settle()'s own frame small enough.
+    struct SettlementAmounts {
+        uint256 winnerAmount;
+        uint256 referrerAAmount;
+        uint256 referrerBAmount;
+        uint256 platformAmount;
+    }
+
+    function settle(
+        uint8 _winnerSide,
+        address _referrerA,
+        uint256 _referrerABps,
+        address _referrerB,
+        uint256 _referrerBBps,
+        bytes calldata signature
+    ) external nonReentrant {
+        IBattleEscrowFactory factory_ = IBattleEscrowFactory(factory);
         require(status == Status.Active, "not active");
-        require(!IBattleEscrowFactory(factory).paused(), "paused");
+        require(!factory_.paused(), "paused");
         require(block.timestamp >= endTime, "battle still live");
         require(_winnerSide == 0 || _winnerSide == 1, "bad side");
+        uint256 maxReferrerBps = factory_.maxReferrerBps();
+        require(_referrerABps <= maxReferrerBps, "referrer A rate too high");
+        require(_referrerBBps <= maxReferrerBps, "referrer B rate too high");
 
-        bytes32 message = keccak256(abi.encodePacked(address(this), _winnerSide, block.chainid));
-        address recovered = message.toEthSignedMessageHash().recover(signature);
-        require(recovered == settlementSigner, "invalid oracle signature");
+        bytes32 message = keccak256(
+            abi.encodePacked(address(this), _winnerSide, _referrerA, _referrerABps, _referrerB, _referrerBBps, block.chainid)
+        );
+        require(message.toEthSignedMessageHash().recover(signature) == settlementSigner, "invalid oracle signature");
 
         status = Status.Settled;
         winnerSide = _winnerSide;
 
         address winner = (_winnerSide == creatorSide) ? creator : opponent;
-        address treasury = IBattleEscrowFactory(factory).platformTreasury();
+        SettlementAmounts memory amounts =
+            _computeSettlementAmounts(factory_.winnerBps(), _referrerA, _referrerABps, _referrerB, _referrerBBps);
 
+        _pay(winner, amounts.winnerAmount);
+        if (amounts.referrerAAmount > 0) _pay(_referrerA, amounts.referrerAAmount);
+        if (amounts.referrerBAmount > 0) _pay(_referrerB, amounts.referrerBAmount);
+        _pay(factory_.platformTreasury(), amounts.platformAmount);
+
+        emit Settled(
+            _winnerSide,
+            winner,
+            amounts.winnerAmount,
+            amounts.platformAmount,
+            _referrerA,
+            amounts.referrerAAmount,
+            _referrerB,
+            amounts.referrerBAmount
+        );
+    }
+
+    /// @dev Winner's cut is `_winnerBps` of the pot (the factory's current
+    /// winnerBps, e.g. 9000 = 90% by default); each referrer's cut is on
+    /// their own referred player's stake (buyIn), not the pot -- at the
+    /// factory's maxReferrerBps ceiling (default 500 = 5%) that's 2.5% of the
+    /// pot each. The platform gets whatever's left. Factory.setWinnerBps
+    /// guarantees `_winnerBps + maxReferrerBps <= 10000` at all times, so this
+    /// subtraction can never underflow even with both referrers maxed out.
+    function _computeSettlementAmounts(
+        uint256 _winnerBps,
+        address _referrerA,
+        uint256 _referrerABps,
+        address _referrerB,
+        uint256 _referrerBBps
+    ) private view returns (SettlementAmounts memory amounts) {
         uint256 pot = buyIn * 2;
-        uint256 winnerAmount = (pot * 8000) / 10000; // 80%
-        uint256 platformAmount = pot - winnerAmount; // 20%; loser receives nothing on-chain (Section 06)
-
-        _pay(winner, winnerAmount);
-        _pay(treasury, platformAmount);
-
-        emit Settled(_winnerSide, winner, winnerAmount, platformAmount);
+        amounts.winnerAmount = (pot * _winnerBps) / 10000;
+        amounts.referrerAAmount = _referrerA == address(0) ? 0 : (buyIn * _referrerABps) / 10000;
+        amounts.referrerBAmount = _referrerB == address(0) ? 0 : (buyIn * _referrerBBps) / 10000;
+        amounts.platformAmount = pot - amounts.winnerAmount - amounts.referrerAAmount - amounts.referrerBAmount;
     }
 
     /**

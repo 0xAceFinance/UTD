@@ -84,15 +84,44 @@ contract BattleEscrowAdversarialTest is Test {
         factory.joinDuel(duel);
     }
 
-    function _sign(uint256 key, address duel, uint8 winnerSide) internal view returns (bytes memory) {
-        bytes32 message = keccak256(abi.encodePacked(duel, winnerSide, block.chainid));
+    /// @dev Low-level signer for the (duel, marker, chainid) message shape --
+    /// used only for voidActive(), whose signed message never grew referrer
+    /// fields (see BattleEscrow.sol's voidActive doc comment).
+    function _sign(uint256 key, address duel, uint8 marker) internal view returns (bytes memory) {
+        bytes32 message = keccak256(abi.encodePacked(duel, marker, block.chainid));
         bytes32 digest = message.toEthSignedMessageHash();
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
         return abi.encodePacked(r, s, v);
     }
 
+    /// @dev Low-level signer for settle()'s full message shape, referrer
+    /// fields included -- matches BattleEscrow.settle()'s exact encoding.
+    function _signSettle(
+        uint256 key,
+        address duel,
+        uint8 winnerSide,
+        address referrerA,
+        uint256 referrerABps,
+        address referrerB,
+        uint256 referrerBBps
+    ) internal view returns (bytes memory) {
+        bytes32 message = keccak256(
+            abi.encodePacked(duel, winnerSide, referrerA, referrerABps, referrerB, referrerBBps, block.chainid)
+        );
+        bytes32 digest = message.toEthSignedMessageHash();
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(key, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    /// @dev Convenience: a settle signature with no referrers on either side --
+    /// what most of these tests (not specifically exercising referral payouts) use.
     function _signSettlement(address duel, uint8 winnerSide) internal view returns (bytes memory) {
-        return _sign(oracleSignerKey, duel, winnerSide);
+        return _signSettle(oracleSignerKey, duel, winnerSide, address(0), 0, address(0), 0);
+    }
+
+    /// @dev No-referrer settle() call -- the shape almost every test here uses.
+    function _settleNoReferrers(address duel, uint8 winnerSide, bytes memory sig) internal {
+        BattleEscrow(duel).settle(winnerSide, address(0), 0, address(0), 0, sig);
     }
 
     uint8 constant VOID_MARKER = 2;
@@ -127,7 +156,7 @@ contract BattleEscrowAdversarialTest is Test {
     function test_cannotActivateASettledDuel() public {
         address duel = _createAndActivateDuel();
         vm.warp(block.timestamp + DURATION + 1);
-        BattleEscrow(duel).settle(0, _signSettlement(duel, 0));
+        _settleNoReferrers(duel, 0, _signSettlement(duel, 0));
 
         // Even the factory itself cannot re-activate a settled duel — status guard fires.
         vm.prank(address(factory));
@@ -151,7 +180,7 @@ contract BattleEscrowAdversarialTest is Test {
     function test_cannotExpireASettledDuel() public {
         address duel = _createAndActivateDuel();
         vm.warp(block.timestamp + DURATION + 1);
-        BattleEscrow(duel).settle(0, _signSettlement(duel, 0));
+        _settleNoReferrers(duel, 0, _signSettlement(duel, 0));
 
         vm.expectRevert("not open");
         BattleEscrow(duel).expire();
@@ -161,17 +190,17 @@ contract BattleEscrowAdversarialTest is Test {
         address duel = _createAndActivateDuel();
         vm.warp(block.timestamp + DURATION + 1);
         bytes memory sig = _signSettlement(duel, 0);
-        BattleEscrow(duel).settle(0, sig);
+        _settleNoReferrers(duel, 0, sig);
 
         vm.expectRevert("not active");
-        BattleEscrow(duel).settle(0, sig);
+        _settleNoReferrers(duel, 0, sig);
     }
 
     function test_cannotSettleAnOpenUnactivatedDuel() public {
         address duel = _createDuel();
         vm.warp(block.timestamp + DURATION + 1);
         vm.expectRevert("not active");
-        BattleEscrow(duel).settle(0, _signSettlement(duel, 0));
+        _settleNoReferrers(duel, 0, _signSettlement(duel, 0));
     }
 
     function test_cannotSettleARefundedDuel() public {
@@ -180,7 +209,7 @@ contract BattleEscrowAdversarialTest is Test {
         factory.cancelDuel(duel);
 
         vm.expectRevert("not active");
-        BattleEscrow(duel).settle(0, _signSettlement(duel, 0));
+        _settleNoReferrers(duel, 0, _signSettlement(duel, 0));
     }
 
     // ==================== access control ====================
@@ -217,7 +246,7 @@ contract BattleEscrowAdversarialTest is Test {
 
         bytes memory sigForSide0 = _signSettlement(duel, 0);
         vm.expectRevert("invalid oracle signature");
-        BattleEscrow(duel).settle(1, sigForSide0);
+        _settleNoReferrers(duel, 1, sigForSide0);
     }
 
     function test_settlementSignatureCannotBeReplayedAgainstADifferentDuelClone() public {
@@ -244,10 +273,10 @@ contract BattleEscrowAdversarialTest is Test {
         bytes memory sigForA = _signSettlement(duelA, 0);
 
         vm.expectRevert("invalid oracle signature");
-        BattleEscrow(duelB).settle(0, sigForA);
+        _settleNoReferrers(duelB, 0, sigForA);
 
         // Sanity: the same signature *does* work on the duel it was actually signed for.
-        BattleEscrow(duelA).settle(0, sigForA);
+        _settleNoReferrers(duelA, 0, sigForA);
         assertEq(uint256(BattleEscrow(duelA).status()), uint256(BattleEscrow.Status.Settled));
     }
 
@@ -264,9 +293,9 @@ contract BattleEscrowAdversarialTest is Test {
         _rotateOracleSigner(vm.addr(newSignerKey));
 
         vm.expectRevert("invalid oracle signature");
-        BattleEscrow(duel).settle(0, _sign(newSignerKey, duel, 1));
+        _settleNoReferrers(duel, 0, _signSettle(newSignerKey, duel, 1, address(0), 0, address(0), 0));
 
-        BattleEscrow(duel).settle(0, sigFromOriginalSigner);
+        _settleNoReferrers(duel, 0, sigFromOriginalSigner);
         assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Settled));
     }
 
@@ -278,9 +307,9 @@ contract BattleEscrowAdversarialTest is Test {
         vm.warp(block.timestamp + DURATION + 1);
 
         vm.expectRevert("invalid oracle signature");
-        BattleEscrow(duel).settle(0, _signSettlement(duel, 0)); // former signer
+        _settleNoReferrers(duel, 0, _signSettlement(duel, 0)); // former signer
 
-        BattleEscrow(duel).settle(0, _sign(newSignerKey, duel, 0));
+        _settleNoReferrers(duel, 0, _signSettle(newSignerKey, duel, 0, address(0), 0, address(0), 0));
         assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Settled));
     }
 
@@ -290,7 +319,7 @@ contract BattleEscrowAdversarialTest is Test {
 
         bytes memory truncated = new bytes(64); // one byte short of a valid 65-byte sig
         vm.expectRevert(abi.encodeWithSignature("ECDSAInvalidSignatureLength(uint256)", 64));
-        BattleEscrow(duel).settle(0, truncated);
+        _settleNoReferrers(duel, 0, truncated);
     }
 
     function test_settleRejectsEmptySignature() public {
@@ -298,7 +327,7 @@ contract BattleEscrowAdversarialTest is Test {
         vm.warp(block.timestamp + DURATION + 1);
 
         vm.expectRevert(abi.encodeWithSignature("ECDSAInvalidSignatureLength(uint256)", 0));
-        BattleEscrow(duel).settle(0, "");
+        _settleNoReferrers(duel, 0, "");
     }
 
     function test_settleRejectsZeroFilledSignature() public {
@@ -307,7 +336,7 @@ contract BattleEscrowAdversarialTest is Test {
 
         bytes memory zeroSig = new bytes(65); // r=0, s=0, v=0 — not a valid v
         vm.expectRevert(abi.encodeWithSignature("ECDSAInvalidSignature()"));
-        BattleEscrow(duel).settle(0, zeroSig);
+        _settleNoReferrers(duel, 0, zeroSig);
     }
 
     function test_settleRejectsBadWinnerSideValue() public {
@@ -315,7 +344,87 @@ contract BattleEscrowAdversarialTest is Test {
         vm.warp(block.timestamp + DURATION + 1);
         bytes memory sig = _signSettlement(duel, 0);
         vm.expectRevert("bad side");
-        BattleEscrow(duel).settle(2, sig);
+        _settleNoReferrers(duel, 2, sig);
+    }
+
+    // ==================== referral payout edge cases ====================
+
+    function test_settleRejectsReferrerABpsAboveCap() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + 1);
+        address referrerA = address(0x4001);
+        uint256 tooHigh = factory.maxReferrerBps() + 1;
+        bytes memory sig = _signSettle(oracleSignerKey, duel, 0, referrerA, tooHigh, address(0), 0);
+
+        vm.expectRevert("referrer A rate too high");
+        BattleEscrow(duel).settle(0, referrerA, tooHigh, address(0), 0, sig);
+    }
+
+    function test_settleRejectsReferrerBBpsAboveCap() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + 1);
+        address referrerB = address(0x4002);
+        uint256 tooHigh = factory.maxReferrerBps() + 1;
+        bytes memory sig = _signSettle(oracleSignerKey, duel, 0, address(0), 0, referrerB, tooHigh);
+
+        vm.expectRevert("referrer B rate too high");
+        BattleEscrow(duel).settle(0, address(0), 0, referrerB, tooHigh, sig);
+    }
+
+    /// @dev The referrer addresses/bps are part of the signed message -- a
+    /// signature produced for one referrer pair cannot be reused with a
+    /// different pair, even holding winnerSide fixed. Otherwise anyone could
+    /// take a validly-signed settlement and redirect the referral cut to
+    /// themselves by supplying different referrer args at call time.
+    function test_settleRejectsMismatchedReferrerArgs() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + 1);
+        address referrerA = address(0x4001);
+        bytes memory sig = _signSettle(oracleSignerKey, duel, 0, referrerA, 500, address(0), 0);
+
+        address attacker = address(0x4003);
+        vm.expectRevert("invalid oracle signature");
+        BattleEscrow(duel).settle(0, attacker, 500, address(0), 0, sig);
+    }
+
+    function test_settlePaysBothReferrersAtSignedRatesAndPlatformKeepsRemainder() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + 1);
+
+        address referrerA = address(0x4001);
+        address referrerB = address(0x4002);
+        uint256 referrerABps = 500; // 5% of creator's stake -> 2.5% of pot
+        uint256 referrerBBps = 300; // 3% of opponent's stake -> 1.5% of pot
+        bytes memory sig = _signSettle(oracleSignerKey, duel, 0, referrerA, referrerABps, referrerB, referrerBBps);
+
+        BattleEscrow(duel).settle(0, referrerA, referrerABps, referrerB, referrerBBps, sig);
+
+        uint256 pot = BUY_IN * 2;
+        uint256 winnerAmount = (pot * 9000) / 10000;
+        uint256 referrerAAmount = (BUY_IN * referrerABps) / 10000;
+        uint256 referrerBAmount = (BUY_IN * referrerBBps) / 10000;
+        uint256 platformAmount = pot - winnerAmount - referrerAAmount - referrerBAmount;
+
+        assertEq(stakeToken.balanceOf(creator), 1_000_000e18 - BUY_IN + winnerAmount);
+        assertEq(stakeToken.balanceOf(referrerA), referrerAAmount);
+        assertEq(stakeToken.balanceOf(referrerB), referrerBAmount);
+        assertEq(stakeToken.balanceOf(platformTreasury), platformAmount);
+        assertEq(winnerAmount + referrerAAmount + referrerBAmount + platformAmount, pot);
+        assertEq(stakeToken.balanceOf(duel), 0);
+    }
+
+    function test_settleWithZeroReferrerAddressPaysNothingRegardlessOfBps() public {
+        address duel = _createAndActivateDuel();
+        vm.warp(block.timestamp + DURATION + 1);
+
+        // A nonzero bps paired with address(0) must never pay out -- the
+        // contract treats address(0) as "no referrer on this side" outright.
+        bytes memory sig = _signSettle(oracleSignerKey, duel, 0, address(0), 500, address(0), 0);
+        BattleEscrow(duel).settle(0, address(0), 500, address(0), 0, sig);
+
+        uint256 pot = BUY_IN * 2;
+        uint256 winnerAmount = (pot * 9000) / 10000;
+        assertEq(stakeToken.balanceOf(platformTreasury), pot - winnerAmount);
     }
 
     // ==================== reentrancy ====================
@@ -340,9 +449,12 @@ contract BattleEscrowAdversarialTest is Test {
 
         // Arm the token: the moment it pays the winner mid-settle(), it tries to call
         // settle() again on the very same duel, with the very same valid signature.
-        hostileToken.arm(duel, abi.encodeWithSelector(BattleEscrow.settle.selector, uint8(0), sig));
+        hostileToken.arm(
+            duel,
+            abi.encodeWithSelector(BattleEscrow.settle.selector, uint8(0), address(0), uint256(0), address(0), uint256(0), sig)
+        );
 
-        BattleEscrow(duel).settle(0, sig);
+        _settleNoReferrers(duel, 0, sig);
 
         // The reentrant inner call must not have been able to settle a second time —
         // status flips to Settled (checks-effects-interactions) before any transfer happens,
@@ -350,7 +462,7 @@ contract BattleEscrowAdversarialTest is Test {
         // exactly as a single settlement would.
         assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Settled));
         uint256 pot = BUY_IN * 2;
-        uint256 winnerAmount = (pot * 8000) / 10000;
+        uint256 winnerAmount = (pot * 9000) / 10000;
         uint256 platformAmount = pot - winnerAmount;
         assertEq(hostileToken.balanceOf(creator), 1_000e18 - BUY_IN + winnerAmount);
         assertEq(hostileToken.balanceOf(platformTreasury), platformAmount);
@@ -370,12 +482,12 @@ contract BattleEscrowAdversarialTest is Test {
         factory.joinDuel(duel);
 
         vm.warp(block.timestamp + DURATION + 1);
-        BattleEscrow(duel).settle(0, _signSettlement(duel, 0));
+        _settleNoReferrers(duel, 0, _signSettlement(duel, 0));
         assertEq(uint256(BattleEscrow(duel).status()), uint256(BattleEscrow.Status.Settled));
     }
 
     function testFuzz_buyInWithinTokenSupplyRange(uint256 buyIn) public {
-        // Keep buyIn * 2 * 8000 (the intermediate term in the 80% split) comfortably below
+        // Keep buyIn * 2 * 9000 (the intermediate term in the 90% split) comfortably below
         // overflow, but exercise a wide fuzz range, including values close to a whale-sized stake.
         buyIn = bound(buyIn, 1, type(uint256).max / 20_000);
 
@@ -394,10 +506,10 @@ contract BattleEscrowAdversarialTest is Test {
         factory.joinDuel(duel);
 
         vm.warp(block.timestamp + DURATION + 1);
-        BattleEscrow(duel).settle(0, _signSettlement(duel, 0));
+        _settleNoReferrers(duel, 0, _signSettlement(duel, 0));
 
         uint256 pot = buyIn * 2;
-        uint256 winnerAmount = (pot * 8000) / 10000;
+        uint256 winnerAmount = (pot * 9000) / 10000;
         uint256 platformAmount = pot - winnerAmount;
 
         // Invariant: total paid out never exceeds (and always exactly equals) what was staked.
@@ -479,17 +591,17 @@ contract BattleEscrowAdversarialTest is Test {
         vm.prank(opponent);
         factory.joinDuel(duel);
         vm.warp(block.timestamp + DURATION + 1);
-        BattleEscrow(duel).settle(0, _signSettlement(duel, 0));
+        _settleNoReferrers(duel, 0, _signSettlement(duel, 0));
 
         uint256 pot = buyIn * 2;
-        uint256 winnerAmount = (pot * 8000) / 10000;
+        uint256 winnerAmount = (pot * 9000) / 10000;
         uint256 platformAmount = pot - winnerAmount;
 
         // No dust created or destroyed.
         assertEq(winnerAmount + platformAmount, pot);
         // Any floor-division remainder falls to the platform side, never the winner.
-        assertGe(platformAmount, pot - (pot * 8000) / 10000);
-        assertLe(winnerAmount * 10000, pot * 8000);
+        assertGe(platformAmount, pot - (pot * 9000) / 10000);
+        assertLe(winnerAmount * 10000, pot * 9000);
     }
 
     // ==================== voidActive (HELD recovery) ====================
@@ -523,7 +635,7 @@ contract BattleEscrowAdversarialTest is Test {
     function test_voidActiveRejectsASettledDuel() public {
         address duel = _createAndActivateDuel();
         vm.warp(block.timestamp + DURATION + 1);
-        BattleEscrow(duel).settle(0, _signSettlement(duel, 0));
+        _settleNoReferrers(duel, 0, _signSettlement(duel, 0));
 
         vm.expectRevert("not active");
         BattleEscrow(duel).voidActive(_signVoid(duel));
@@ -560,7 +672,7 @@ contract BattleEscrowAdversarialTest is Test {
         vm.warp(block.timestamp + DURATION + 1);
         bytes memory voidSig = _signVoid(duel);
         vm.expectRevert("bad side"); // VOID_MARKER (2) fails settle()'s own side check first
-        BattleEscrow(duel).settle(VOID_MARKER, voidSig);
+        _settleNoReferrers(duel, VOID_MARKER, voidSig);
     }
 
     // ==================== chain-id-bound signatures ====================
@@ -569,12 +681,13 @@ contract BattleEscrowAdversarialTest is Test {
         address duel = _createAndActivateDuel();
         vm.warp(block.timestamp + DURATION + 1);
 
-        bytes32 wrongChainMessage = keccak256(abi.encodePacked(duel, uint8(0), uint256(999)));
+        bytes32 wrongChainMessage =
+            keccak256(abi.encodePacked(duel, uint8(0), address(0), uint256(0), address(0), uint256(0), uint256(999)));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(oracleSignerKey, wrongChainMessage.toEthSignedMessageHash());
         bytes memory wrongChainSig = abi.encodePacked(r, s, v);
 
         vm.expectRevert("invalid oracle signature");
-        BattleEscrow(duel).settle(0, wrongChainSig);
+        _settleNoReferrers(duel, 0, wrongChainSig);
     }
 
     function test_voidActiveRejectsASignatureSignedForADifferentChainId() public {
@@ -648,7 +761,7 @@ contract BattleEscrowAdversarialTest is Test {
     function test_refundStaleRejectsAnAlreadySettledDuel() public {
         address duel = _createAndActivateDuel();
         vm.warp(block.timestamp + DURATION + 1);
-        BattleEscrow(duel).settle(0, _signSettlement(duel, 0));
+        _settleNoReferrers(duel, 0, _signSettlement(duel, 0));
 
         vm.warp(block.timestamp + BattleEscrow(duel).STALE_REFUND_GRACE_PERIOD() + 1);
         vm.expectRevert("not active");

@@ -264,6 +264,26 @@
         "internalType": "uint8"
       },
       {
+        "name": "_referrerA",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_referrerABps",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "_referrerB",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_referrerBBps",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
         "name": "signature",
         "type": "bytes",
         "internalType": "bytes"
@@ -476,6 +496,30 @@
       },
       {
         "name": "platformAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "referrerA",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "referrerAAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "referrerB",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "referrerBAmount",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"

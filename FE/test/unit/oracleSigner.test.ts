@@ -9,6 +9,7 @@ import { readSettlementSigner } from '@/lib/chainClient';
 const ESCROW_A = '0x1000000000000000000000000000000000000001' as `0x${string}`;
 const ESCROW_B = '0x1000000000000000000000000000000000000002' as `0x${string}`;
 const VOID_MARKER = 2;
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 
 describe('lib/oracleSigner::signSettlement', () => {
   it('produces a signature that recovers to the configured oracle signer address', async () => {
@@ -17,12 +18,31 @@ describe('lib/oracleSigner::signSettlement', () => {
 
     // Reproduce exactly what BattleEscrow.settle() verifies (see the
     // function's own doc comment): keccak256(abi.encodePacked(duel,
-    // winnerSide, chainid)) wrapped in the EIP-191 personal-sign prefix.
-    const message = keccak256(encodePacked(['address', 'uint8', 'uint256'], [ESCROW_A, 0, BigInt(CONTRACTS.chainId)]));
+    // winnerSide, referrerA, referrerABps, referrerB, referrerBBps, chainid))
+    // wrapped in the EIP-191 personal-sign prefix. signSettlement's default
+    // (no referrals passed) is NO_REFERRERS -- zero address, zero bps both sides.
+    const message = keccak256(
+      encodePacked(
+        ['address', 'uint8', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+        [ESCROW_A, 0, ZERO_ADDRESS, 0n, ZERO_ADDRESS, 0n, BigInt(CONTRACTS.chainId)]
+      )
+    );
     const digest = hashMessage({ raw: message });
     const recovered = await recoverAddress({ hash: digest, signature });
 
     expect(recovered.toLowerCase()).toBe(expectedSigner.toLowerCase());
+  });
+
+  it('folds referrer terms into the signed message -- different terms produce different signatures', async () => {
+    const referrerA = '0x1000000000000000000000000000000000000009' as `0x${string}`;
+    const sigNoReferrers = await signSettlement(ESCROW_A, 0);
+    const sigWithReferrer = await signSettlement(ESCROW_A, 0, {
+      referrerA,
+      referrerABps: 500n,
+      referrerB: ZERO_ADDRESS,
+      referrerBBps: 0n,
+    });
+    expect(sigNoReferrers).not.toBe(sigWithReferrer);
   });
 
   it('produces different signatures for different winnerSide values on the same duel', async () => {
@@ -91,8 +111,20 @@ describe('lib/oracleSigner: key per escrow (signer rotation)', () => {
   // Anvil's well-known test key #3, standing in for the pre-rotation oracle key.
   const PREVIOUS_KEY = '0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6' as `0x${string}`;
 
-  async function recover(escrow: `0x${string}`, side: number, signature: `0x${string}`) {
-    const message = keccak256(encodePacked(['address', 'uint8', 'uint256'], [escrow, side, BigInt(CONTRACTS.chainId)]));
+  /** Reconstructs voidActive()'s message shape -- unchanged, no referrer fields. */
+  async function recoverVoid(escrow: `0x${string}`, marker: number, signature: `0x${string}`) {
+    const message = keccak256(encodePacked(['address', 'uint8', 'uint256'], [escrow, marker, BigInt(CONTRACTS.chainId)]));
+    return (await recoverAddress({ hash: hashMessage({ raw: message }), signature })).toLowerCase();
+  }
+
+  /** Reconstructs settle()'s message shape with NO_REFERRERS (this file never exercises referrals). */
+  async function recoverSettle(escrow: `0x${string}`, side: number, signature: `0x${string}`) {
+    const message = keccak256(
+      encodePacked(
+        ['address', 'uint8', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+        [escrow, side, ZERO_ADDRESS, 0n, ZERO_ADDRESS, 0n, BigInt(CONTRACTS.chainId)]
+      )
+    );
     return (await recoverAddress({ hash: hashMessage({ raw: message }), signature })).toLowerCase();
   }
 
@@ -108,15 +140,15 @@ describe('lib/oracleSigner: key per escrow (signer rotation)', () => {
     const previous = privateKeyToAccount(PREVIOUS_KEY).address;
     vi.mocked(readSettlementSigner).mockResolvedValue(previous);
 
-    expect(await recover(ESCROW_A, 1, await signSettlement(ESCROW_A, 1))).toBe(previous.toLowerCase());
-    expect(await recover(ESCROW_A, VOID_MARKER, await signVoid(ESCROW_A))).toBe(previous.toLowerCase());
+    expect(await recoverSettle(ESCROW_A, 1, await signSettlement(ESCROW_A, 1))).toBe(previous.toLowerCase());
+    expect(await recoverVoid(ESCROW_A, VOID_MARKER, await signVoid(ESCROW_A))).toBe(previous.toLowerCase());
     expect(readSettlementSigner).toHaveBeenCalledWith(ESCROW_A);
   });
 
   it('still uses the current key for escrows activated after the rotation', async () => {
     process.env.ORACLE_SIGNER_PRIVATE_KEY_PREVIOUS = PREVIOUS_KEY;
     const current = privateKeyToAccount(process.env.ORACLE_SIGNER_PRIVATE_KEY as `0x${string}`).address;
-    expect(await recover(ESCROW_A, 0, await signSettlement(ESCROW_A, 0))).toBe(current.toLowerCase());
+    expect(await recoverSettle(ESCROW_A, 0, await signSettlement(ESCROW_A, 0))).toBe(current.toLowerCase());
   });
 
   it('fails loudly when no configured key matches the escrow', async () => {

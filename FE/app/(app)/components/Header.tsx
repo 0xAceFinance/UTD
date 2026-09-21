@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ConnectKitButton } from "connectkit"
-import { Gift } from "lucide-react"
+import { Gift, Share2 } from "lucide-react"
 import { useWallet } from "@/hooks/useWallet"
 import { useAirdrop } from "./airdrop/useAirdrop"
 import { routeTitle } from "./nav"
@@ -78,6 +78,26 @@ function AirdropButton({ active }: { active: boolean }) {
     )
 }
 
+/** Phones only: same reasoning as AirdropButton -- Referrals isn't in NAV,
+ * since BottomNav's grid is fixed to NAV's length, so it needs its own way
+ * in on small screens. */
+function ReferralButton({ active }: { active: boolean }) {
+    return (
+        <Link
+            href="/referrals"
+            aria-label="Referrals"
+            aria-current={active ? "page" : undefined}
+            className={`flex h-9 items-center gap-1.5 border px-2.5 font-mono text-[11px] transition-colors lg:hidden ${
+                active
+                    ? "border-[var(--acid)] text-[var(--acid)]"
+                    : "border-[var(--line-2)] bg-[var(--s1)] text-[var(--dim)] hover:border-[var(--acid)]"
+            }`}
+        >
+            <Share2 className="h-3.5 w-3.5" />
+        </Link>
+    )
+}
+
 export default function Header() {
     const pathname = usePathname()
 
@@ -101,6 +121,7 @@ export default function Header() {
 
                 <div className="flex flex-none items-center gap-2">
                     <AirdropButton active={pathname.startsWith("/airdrop")} />
+                    <ReferralButton active={pathname.startsWith("/referrals")} />
                     <WalletButton />
                 </div>
             </div>

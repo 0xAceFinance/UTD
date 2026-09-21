@@ -216,12 +216,23 @@ describe('lib/duelEngine::maybeSettle winner determination', () => {
     expect(duel.oracleSignature).toBeTruthy();
 
     const expectedSigner = privateKeyToAccount(process.env.ORACLE_SIGNER_PRIVATE_KEY as `0x${string}`).address;
+    // Neither wallet has any WhitelistEntry referral attribution set up here,
+    // so computeReferralSnapshot resolves to no referrer on either side --
+    // the message is signed with NO_REFERRERS (zero address, zero bps both sides).
+    const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
     const message = keccak256(
-      encodePacked(['address', 'uint8', 'uint256'], [duel.escrowAddress as `0x${string}`, 1, BigInt(CONTRACTS.chainId)])
+      encodePacked(
+        ['address', 'uint8', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+        [duel.escrowAddress as `0x${string}`, 1, ZERO_ADDRESS, 0n, ZERO_ADDRESS, 0n, BigInt(CONTRACTS.chainId)]
+      )
     );
     const digest = hashMessage({ raw: message });
     const recovered = await recoverAddress({ hash: digest, signature: duel.oracleSignature as `0x${string}` });
     expect(recovered.toLowerCase()).toBe(expectedSigner.toLowerCase());
+
+    // Referral snapshot fields persist even when empty (0 bps, no referrer).
+    expect(duel.creatorReferrerBps).toBe(0);
+    expect(duel.opponentReferrerBps).toBe(0);
 
     // Points/CombatRecord must NOT be awarded yet -- they wait for confirm-settlement.
     expect(duel.winnerPoints).toBeUndefined();
@@ -331,6 +342,7 @@ describe('lib/duelEngine::retrySettlementSigning', () => {
   it('repairs a duel stranded at SETTLING with no signature: signs it and persists winnerSide + oracleSignature', async () => {
     const duel = await createDuel({
       status: 'SETTLING',
+      opponentWallet: '0xretryopponent00000000000000000000000001',
       escrowAddress: '0x1000000000000000000000000000000000000005',
       tokenA: { startMarketCapUsd: 1_000_000, sustainedPeakMarketCapUsd: 1_000_000 },
       tokenB: { startMarketCapUsd: 1_000_000, sustainedPeakMarketCapUsd: 1_500_000 },
@@ -345,8 +357,12 @@ describe('lib/duelEngine::retrySettlementSigning', () => {
     expect(duel.oracleSignature).toBeTruthy();
 
     const expectedSigner = privateKeyToAccount(process.env.ORACLE_SIGNER_PRIVATE_KEY as `0x${string}`).address;
+    const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
     const message = keccak256(
-      encodePacked(['address', 'uint8', 'uint256'], [duel.escrowAddress as `0x${string}`, 1, BigInt(CONTRACTS.chainId)])
+      encodePacked(
+        ['address', 'uint8', 'address', 'uint256', 'address', 'uint256', 'uint256'],
+        [duel.escrowAddress as `0x${string}`, 1, ZERO_ADDRESS, 0n, ZERO_ADDRESS, 0n, BigInt(CONTRACTS.chainId)]
+      )
     );
     const digest = hashMessage({ raw: message });
     const recovered = await recoverAddress({ hash: digest, signature: duel.oracleSignature as `0x${string}` });

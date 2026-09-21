@@ -140,7 +140,7 @@ describe('POST /api/scan', () => {
 describe('GET /api/leaderboard', () => {
   it('ranks by totalPoints descending and attaches a tier', async () => {
     await CombatRecord.create({ wallet: '0xlow', totalPoints: 100, wins: 1, losses: 0 });
-    await CombatRecord.create({ wallet: '0xhigh', totalPoints: 30_000, wins: 10, losses: 1 });
+    await CombatRecord.create({ wallet: '0xhigh', totalPoints: 100_000, wins: 10, losses: 1 });
 
     const res = await leaderboardRoute();
     const ranked = (await body(res)).data;

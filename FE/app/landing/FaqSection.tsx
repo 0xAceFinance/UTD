@@ -51,7 +51,7 @@ const FAQS: FaqItem[] = [
         question: "How is the pot split?",
         category: "rewards",
         answer:
-            "The winner takes 80% of the pot, which is 1.6× their stake. The other 20% funds the oracle, liquidity programs and the rewards pool. Losers forfeit the stake and keep the points.",
+            "The winner takes 90% of the pot, which is 1.8× their stake. The remaining 10% splits between referral commissions (if either player was referred) and the platform. Losers forfeit the stake and keep the points.",
     },
 ]
 

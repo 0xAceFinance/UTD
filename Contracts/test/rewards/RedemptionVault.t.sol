@@ -25,7 +25,7 @@ contract RedemptionVaultTest is Test {
         rewardToken.mint(address(vault), 1_000_000e18); // fund the fixed rewards pool
 
         vm.prank(pointsOracle);
-        nft.addPoints(player, 30_000); // lands player in Gold (>= 25,000; cap: 8,000 pts/epoch)
+        nft.addPoints(player, 100_000); // lands player in Gold (>= 100,000; cap: 8,000 pts/epoch)
     }
 
     function test_redeemCreatesAVestingScheduleAtTheConfiguredRate() public {
@@ -33,7 +33,7 @@ contract RedemptionVaultTest is Test {
         vault.redeem(1_000);
 
         assertEq(vault.schedulesLength(player), 1);
-        assertEq(nft.availablePoints(player), 29_000);
+        assertEq(nft.availablePoints(player), 99_000);
         // 1,000 points x 0.001 token/point = 1 token
         assertEq(vault.claimableAmount(player), 0); // nothing vested yet, startTime == now
     }
@@ -41,7 +41,7 @@ contract RedemptionVaultTest is Test {
     function test_cannotRedeemMoreThanAvailablePoints() public {
         vm.prank(player);
         vm.expectRevert("insufficient points");
-        vault.redeem(30_001);
+        vault.redeem(100_001);
     }
 
     function test_cannotExceedTierCapPerEpoch() public {
