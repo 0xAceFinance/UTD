@@ -107,6 +107,11 @@ export interface IDuel extends Document {
     creatorReferrerBps?: number;
     opponentReferrerWallet?: string;
     opponentReferrerBps?: number;
+    /** Set only if the opponent swapped the creator's proposed opposing token
+     * at join time -- the on-chain DuelCreated event (immutable) still shows
+     * this original symbol, which will now diverge from the opponent's slot
+     * on tokenA/tokenB.symbol. Kept for support/audit, never read by any logic. */
+    originalOpponentTokenSymbol?: string;
 }
 
 const PoolSampleSchema = new Schema<StoredPoolSample>(
@@ -167,6 +172,7 @@ const DuelSchema = new Schema<IDuel>({
     creatorReferrerBps: Number,
     opponentReferrerWallet: { type: String, lowercase: true },
     opponentReferrerBps: Number,
+    originalOpponentTokenSymbol: String,
 });
 
 export default models.Duel || model<IDuel>('Duel', DuelSchema);

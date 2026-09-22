@@ -40,6 +40,10 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true)
     const [joiningId, setJoiningId] = useState<string | null>(null)
     const [pendingJoin, setPendingJoin] = useState<DuelDTO | null>(null)
+    // The token the joiner picked in place of the creator's proposed opposing
+    // token, if any -- null means "use the default". Reset whenever a new
+    // join dialog opens (see openJoinConfirm).
+    const [opponentTokenSymbol, setOpponentTokenSymbol] = useState<string | null>(null)
     const paused = useFactoryState()?.paused ?? false
 
     const [browseLobbies, setBrowseLobbies] = useState<DuelDTO[]>([])
@@ -118,6 +122,7 @@ export default function Dashboard() {
             toast.error("Duels are paused right now. Try again later.")
             return
         }
+        setOpponentTokenSymbol(null)
         setPendingJoin(lobby)
     }
 
@@ -139,10 +144,17 @@ export default function Dashboard() {
                 )
             }
 
+            const opponentToken = opponentTokenSymbol ? tokens.find((t) => t.symbol === opponentTokenSymbol) : undefined
             const res = await fetch(`/api/duels/${duelId}/join`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ opponentWallet: address, txHash, refCode: getStoredRef() }),
+                body: JSON.stringify({
+                    opponentWallet: address,
+                    txHash,
+                    refCode: getStoredRef(),
+                    opponentTokenSymbol: opponentTokenSymbol ?? undefined,
+                    opponentTokenSnapshot: opponentToken,
+                }),
             })
             const json = await res.json()
             if (!json.success) {
@@ -308,8 +320,14 @@ export default function Dashboard() {
                     {pendingJoin &&
                         (() => {
                             const mySide: 0 | 1 = pendingJoin.creatorSide === 0 ? 1 : 0
-                            const myToken = mySide === 0 ? pendingJoin.tokenA : pendingJoin.tokenB
+                            const proposedToken = mySide === 0 ? pendingJoin.tokenA : pendingJoin.tokenB
                             const theirToken = mySide === 0 ? pendingJoin.tokenB : pendingJoin.tokenA
+                            const myTokenSymbol = opponentTokenSymbol ?? proposedToken.symbol
+                            // Any other Top 10 token the joiner could swap in for the
+                            // creator's proposed pick -- excludes both sides already in play.
+                            const tokenOptions = tokens.filter(
+                                (t) => t.symbol !== theirToken.symbol && t.symbol !== proposedToken.symbol
+                            )
                             const pot = pendingJoin.buyInUsd * 2
                             const winAmount = Math.round(pot * 0.9)
                             const busy = joiningId === pendingJoin._id
@@ -329,7 +347,7 @@ export default function Dashboard() {
                                                 You play
                                             </div>
                                             <div className="mt-2">
-                                                <SideTag side={mySide === 0 ? "A" : "B"} label={myToken.symbol} />
+                                                <SideTag side={mySide === 0 ? "A" : "B"} label={myTokenSymbol} />
                                             </div>
                                         </div>
                                         <div className="bg-[var(--s2)] p-3.5">
@@ -341,6 +359,37 @@ export default function Dashboard() {
                                             </div>
                                         </div>
                                     </div>
+
+                                    {tokenOptions.length > 0 && (
+                                        <div className="mt-3">
+                                            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--faint)]">
+                                                Change your token
+                                            </div>
+                                            <div className="mt-2 flex flex-wrap gap-1.5">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setOpponentTokenSymbol(null)}
+                                                    className={`app-chip h-8 px-2.5 text-[11px] ${
+                                                        !opponentTokenSymbol ? "border-[var(--acid)] text-[var(--acid)]" : ""
+                                                    }`}
+                                                >
+                                                    {proposedToken.symbol} (proposed)
+                                                </button>
+                                                {tokenOptions.map((t) => (
+                                                    <button
+                                                        key={t.symbol}
+                                                        type="button"
+                                                        onClick={() => setOpponentTokenSymbol(t.symbol)}
+                                                        className={`app-chip h-8 px-2.5 text-[11px] ${
+                                                            opponentTokenSymbol === t.symbol ? "border-[var(--acid)] text-[var(--acid)]" : ""
+                                                        }`}
+                                                    >
+                                                        {t.symbol}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
 
                                     <dl className="mt-3 space-y-2 font-mono text-[13px]">
                                         <Row k="Stake" v={`$${pendingJoin.buyInUsd}`} />

@@ -70,6 +70,10 @@ export interface DuelDTO {
     /** PayoutDeferred events from the settle() tx: payouts the stake token refused
      * (e.g. a blacklisted address), credited to owed[to] on the escrow instead. */
     deferredPayouts?: { to: string; amount: string }[]
+    /** Set only if the opponent swapped the creator's proposed opposing token
+     * at join time -- the on-chain DuelCreated event still shows this original
+     * symbol, which now diverges from the opponent's slot on tokenA/tokenB. */
+    originalOpponentTokenSymbol?: string
 }
 
 /** Mirrors BattleEscrow.STALE_REFUND_GRACE_PERIOD (Contracts/src/duel/BattleEscrow.sol). */

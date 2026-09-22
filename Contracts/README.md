@@ -134,7 +134,15 @@ Refunded` (via `cancel`/`expire`), or `Active -> Refunded` (via
   tokenASymbol, tokenBSymbol) external` — callable exactly once per clone
   (guarded by `initialized`); asserts the creator's stake already landed in
   the clone (the factory transfers it in the same transaction), then opens a
-  `MAX_OPEN_WINDOW = 5 minutes` matchmaking window.
+  `MAX_OPEN_WINDOW = 5 minutes` matchmaking window. `tokenASymbol`/
+  `tokenBSymbol` are free-form display strings only — no address, no
+  validation, never read again on-chain (not even by `settle()`, which only
+  cares about `winnerSide`). The FE lets the joiner swap the creator's
+  proposed opposing token for a different Top-10 token at join time
+  (off-chain only, `FE/app/api/duels/[id]/join/route.ts`); when that
+  happens, these immutable on-chain strings keep showing the creator's
+  *original* proposal and no longer match what was actually duelled — a
+  deliberate, funds-irrelevant tradeoff rather than a bug.
 - `joinTerms() external view returns (address stakeToken, uint256 buyIn)` —
   read by the factory so `joinDuel` knows how much to pull from the opponent.
 - `activate(address opponent) external` — `onlyFactory`; requires the clone

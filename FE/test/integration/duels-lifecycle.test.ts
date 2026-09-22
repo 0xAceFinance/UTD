@@ -268,6 +268,82 @@ describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {
     expect((await body(res)).error).toMatch(/does not match/);
   });
 
+  it('join without an opponentTokenSymbol leaves the creator\'s proposed opposing token unchanged', async () => {
+    const duel = await createOnChainDuel(); // creatorSide 0, tokenA=FOO, tokenB=BAR
+    chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
+    getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
+
+    const res = await joinDuelRoute(
+      postJson(`http://localhost/api/duels/${duel._id}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32) }, { 'x-forwarded-for': OPPONENT_IP }),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
+    const joined = (await body(res)).data;
+    expect(res.status).toBe(200);
+    expect(joined.tokenB.symbol).toBe('BAR');
+    expect(joined.originalOpponentTokenSymbol).toBeFalsy();
+  });
+
+  it('opponent can swap the creator\'s proposed opposing token for a different Top 10 token at join time', async () => {
+    const duel = await createOnChainDuel(); // creatorSide 0, tokenA=FOO (creator's), tokenB=BAR (proposed opponent slot)
+    const baz = await createDuelToken({ symbol: 'BAZ', marketCapUsd: 2_000_000, liquidityUsd: 200_000 });
+    chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
+    getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
+
+    const res = await joinDuelRoute(
+      postJson(
+        `http://localhost/api/duels/${duel._id}/join`,
+        { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32), opponentTokenSymbol: 'BAZ' },
+        { 'x-forwarded-for': OPPONENT_IP }
+      ),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
+    const joined = (await body(res)).data;
+    expect(res.status).toBe(200);
+    expect(joined.status).toBe('LIVE');
+    expect(joined.tokenA.symbol).toBe('FOO'); // creator's token untouched
+    expect(joined.tokenB.symbol).toBe('BAZ'); // opponent's swapped-in token
+    expect(joined.tokenB.tokenAddress.toLowerCase()).toBe(baz.tokenAddress.toLowerCase());
+    expect(joined.tokenB.startMarketCapUsd).toBeGreaterThan(0); // seeded from BAZ's own live samples, not BAR's
+    expect(joined.originalOpponentTokenSymbol).toBe('BAR');
+  });
+
+  it('rejects an opponent token override equal to the creator\'s own token', async () => {
+    const duel = await createOnChainDuel(); // creatorSide 0 -> creator's token is FOO
+    chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
+
+    const res = await joinDuelRoute(
+      postJson(
+        `http://localhost/api/duels/${duel._id}/join`,
+        { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32), opponentTokenSymbol: 'FOO' },
+        { 'x-forwarded-for': OPPONENT_IP }
+      ),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
+    expect(res.status).toBe(400);
+    expect((await body(res)).error).toMatch(/must be different/);
+    const reloaded = await Duel.findById(duel._id);
+    expect(reloaded?.status).toBe('OPEN');
+  });
+
+  it('rejects an opponent token override that is not in today\'s Top 10 and has no snapshot', async () => {
+    const duel = await createOnChainDuel();
+    chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
+
+    const res = await joinDuelRoute(
+      postJson(
+        `http://localhost/api/duels/${duel._id}/join`,
+        { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32), opponentTokenSymbol: 'NOTLISTED' },
+        { 'x-forwarded-for': OPPONENT_IP }
+      ),
+      { params: Promise.resolve({ id: duel._id }) }
+    );
+    expect(res.status).toBe(400);
+    expect((await body(res)).error).toMatch(/Top 10/);
+    const reloaded = await Duel.findById(duel._id);
+    expect(reloaded?.status).toBe('OPEN');
+    expect(reloaded?.tokenB.symbol).toBe('BAR');
+  });
+
   it('cancel before join: creator can cancel an OPEN duel, and the cancellation is recorded for the rate limiter', async () => {
     const duel = await createOnChainDuel();
     chainVerifyMocks.verifyDuelClosed.mockResolvedValue(undefined);

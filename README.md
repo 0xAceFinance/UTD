@@ -145,10 +145,19 @@ never depends on a player clicking a button in time.
    (`lib/chainVerify.ts::verifyDuelCreated`) rather than trusting the client, records
    the wallet+IP (`WalletSighting`, feeds sybil detection later), and best-effort
    attributes any pending referral code (`lib/referralAttribution.ts`).
-3. **Join.** An opponent signs `joinDuel()`; `POST /api/duels/[id]/join` verifies the
-   real `DuelJoined` event, snapshots a fresh live market-cap read for both sides
-   (the real starting line, not the scan-time snapshot), and flips the `Duel` document
-   straight to `LIVE`.
+3. **Join.** The opponent isn't locked into the creator's proposed pair: the join UI
+   shows the creator's token (fixed) plus the creator's proposed opposing token,
+   pre-selected but swappable for any other token in today's Top 10. Accepting the
+   default or picking a different one, the opponent signs `joinDuel()` (the on-chain
+   call itself is unchanged — token choice is resolved off-chain only); `POST
+   /api/duels/[id]/join` verifies the real `DuelJoined` event, validates and applies
+   any token swap (`lib/resolveDuelToken.ts`, same Top-10/must-differ rules as
+   creation), snapshots a fresh live market-cap read for both sides (the real starting
+   line, not the scan-time snapshot), and flips the `Duel` document straight to
+   `LIVE`. If the opponent swapped tokens, the original proposal is kept on
+   `Duel.originalOpponentTokenSymbol` for support/audit — the on-chain `DuelCreated`
+   event's symbols are immutable and will keep showing the creator's original
+   proposal, which no on-chain logic (including `settle()`) ever reads again.
 4. **Live.** While `LIVE`, the frontend polls `GET /api/duels/[id]` every ~3s. Each
    poll re-runs `@mcapduel/engine`'s oracle pipeline (liquidity-weighted median across
    pools → liquidity-depth gate → 60s TWAP → sustained-peak dwell validation →
@@ -197,7 +206,7 @@ needs directly — there is no barrel/index file.
 
 | Model | Key fields | Purpose |
 |---|---|---|
-| `Duel` | `status` (matchmaking's `LobbyStatus`), `creatorWallet`/`opponentWallet`, `tokenA`/`tokenB` (`TokenSide`: symbol, address, live samples, start/current/sustained-peak market caps), `buyInUsd`, `durationSeconds`, `escrowAddress`, `oracleSignature`, `flaggedSybil`, `creatorReferrerWallet`/`creatorReferrerBps`, `opponentReferrerWallet`/`opponentReferrerBps` | The lobby/battle record — off-chain mirror + orchestration state around the on-chain escrow. Central model of the whole flow. |
+| `Duel` | `status` (matchmaking's `LobbyStatus`), `creatorWallet`/`opponentWallet`, `tokenA`/`tokenB` (`TokenSide`: symbol, address, live samples, start/current/sustained-peak market caps), `buyInUsd`, `durationSeconds`, `escrowAddress`, `oracleSignature`, `flaggedSybil`, `creatorReferrerWallet`/`creatorReferrerBps`, `opponentReferrerWallet`/`opponentReferrerBps`, `originalOpponentTokenSymbol` (set only if the opponent swapped the creator's proposed opposing token at join time) | The lobby/battle record — off-chain mirror + orchestration state around the on-chain escrow. Central model of the whole flow. |
 | `DuelToken` | `symbol` (unique), `rank`, `tokenAddress`, `marketCapUsd`, `liquidityUsd`, `volume24hUsd`, `change24hPct` | Today's Top 10 duel-eligible tokens, replaced wholesale by every scan. |
 | `CombatRecord` | `wallet` (unique), `totalPoints`, `redeemedPoints`, `wins`, `losses`, `currentStreak`, `recentOpponents[]` | Off-chain stand-in for `CombatRecordNFT.sol` (not deployed) — the points/tier/leaderboard system of record. |
 | `ReferralAccount` | `wallet` (unique), `cumulativeSettledVolumeUsd`, `cumulativeReferralEarningsUsd`, `volumeCheckpointsHit[]`, `earningsCheckpointsHit[]` | A wallet's own lifetime volume (drives its tier as a referrer) and lifetime referral earnings. |

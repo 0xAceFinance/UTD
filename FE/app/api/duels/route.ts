@@ -4,13 +4,13 @@ import { readStakeTokenDecimals, readEscrowOpenDeadline } from '@/lib/chainClien
 import { createLobby } from '@mcapduel/matchmaking';
 import { connectToDatabase } from '@/lib/mongoose';
 import Duel from '@/lib/models/Duel';
-import DuelToken from '@/lib/models/DuelToken';
 import WalletSighting from '@/lib/models/WalletSighting';
 import { getClientIp } from '@/lib/requestSignals';
 import { getFundingSource } from '@/lib/fundingSource';
 import { checkCanCreateLobby } from '@/lib/duelGuards';
 import { verifyDuelCreated } from '@/lib/chainVerify';
 import { attributeReferral } from '@/lib/referralAttribution';
+import { resolveDuelToken } from '@/lib/resolveDuelToken';
 import { success, failure } from '@/utils/response';
 
 export async function GET(req: NextRequest) {
@@ -32,27 +32,6 @@ export async function GET(req: NextRequest) {
     } catch (err) {
         return failure((err as Error).message);
     }
-}
-
-/** Bare-minimum shape check for a client-supplied token snapshot (see below) --
- * not a trust boundary, just enough to stop obviously-malformed data from
- * reaching the database. */
-function isValidSnapshot(s: unknown): s is {
-    symbol: string;
-    name: string;
-    tokenAddress: string;
-    totalSupply: number;
-    marketCapUsd: number;
-} {
-    if (!s || typeof s !== 'object') return false;
-    const t = s as Record<string, unknown>;
-    return (
-        typeof t.symbol === 'string' &&
-        typeof t.name === 'string' &&
-        typeof t.tokenAddress === 'string' &&
-        typeof t.totalSupply === 'number' &&
-        typeof t.marketCapUsd === 'number'
-    );
 }
 
 export async function POST(req: NextRequest) {
@@ -100,12 +79,10 @@ export async function POST(req: NextRequest) {
         // symbol out of today's Top 10 in between must not block registration
         // (see app/(app)/duels/create/page.tsx for where the snapshot is taken,
         // and lib/duelGuards.ts for the "why" on this whole flow).
-        const [liveTokenA, liveTokenB] = await Promise.all([
-            DuelToken.findOne({ symbol: tokenASymbol }),
-            DuelToken.findOne({ symbol: tokenBSymbol }),
+        const [tokenA, tokenB] = await Promise.all([
+            resolveDuelToken(tokenASymbol, tokenASnapshot),
+            resolveDuelToken(tokenBSymbol, tokenBSnapshot),
         ]);
-        const tokenA = liveTokenA ?? (isValidSnapshot(tokenASnapshot) ? tokenASnapshot : null);
-        const tokenB = liveTokenB ?? (isValidSnapshot(tokenBSnapshot) ? tokenBSnapshot : null);
         if (!tokenA || !tokenB) {
             return failure('both tokens must be from today\'s Top 10', 400);
         }

@@ -12,6 +12,7 @@ import { getClientIp, getClientCountry } from '@/lib/requestSignals';
 import { getFundingSource } from '@/lib/fundingSource';
 import { BLOCKED_COUNTRY_CODES } from '@/lib/riskConfig';
 import { attributeReferral } from '@/lib/referralAttribution';
+import { resolveDuelToken } from '@/lib/resolveDuelToken';
 import { success, failure } from '@/utils/response';
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -19,12 +20,36 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const { id } = await params;
         if (!Types.ObjectId.isValid(id)) return failure('invalid duel id', 400);
 
-        const { opponentWallet, txHash, refCode } = await req.json();
+        const { opponentWallet, txHash, refCode, opponentTokenSymbol, opponentTokenSnapshot } = await req.json();
         if (!opponentWallet) return failure('opponentWallet is required', 400);
 
         await connectToDatabase();
         const duel = await Duel.findById(id);
         if (!duel) return failure('duel not found', 404);
+
+        // The joiner may swap the creator's proposed opposing token for a
+        // different one instead of being forced into it -- resolve and
+        // validate it the same way the creator's own pair is validated at
+        // creation (app/api/duels/route.ts), then overwrite the opponent's
+        // slot *before* the price-baseline loop below so the oracle pipeline
+        // starts tracking the newly-chosen token from duel start.
+        if (opponentTokenSymbol) {
+            const opponentSlot = duel.creatorSide === 0 ? 'tokenB' : 'tokenA';
+            const creatorTokenSymbol = duel[opponentSlot === 'tokenB' ? 'tokenA' : 'tokenB'].symbol;
+            if (opponentTokenSymbol === creatorTokenSymbol) {
+                return failure('tokens must be different', 400);
+            }
+            if (opponentTokenSymbol !== duel[opponentSlot].symbol) {
+                const resolved = await resolveDuelToken(opponentTokenSymbol, opponentTokenSnapshot);
+                if (!resolved) return failure('token must be from today\'s Top 10', 400);
+
+                duel.originalOpponentTokenSymbol = duel[opponentSlot].symbol;
+                duel[opponentSlot].symbol = resolved.symbol;
+                duel[opponentSlot].name = resolved.name;
+                duel[opponentSlot].tokenAddress = resolved.tokenAddress;
+                duel[opponentSlot].totalSupply = resolved.totalSupply;
+            }
+        }
 
         // Geofence (@mcapduel/risk, Section 08) -- see app/api/duels/route.ts
         // for the same check on the creator side.
