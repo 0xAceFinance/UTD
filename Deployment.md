@@ -158,8 +158,8 @@ real private key into a chat/AI tool.
 gcloud run deploy utd-backend \
   --source . \
   --allow-unauthenticated \
-  --set-build-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
-  --set-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
+  --set-build-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
+  --set-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
   --set-secrets "ORACLE_SIGNER_PRIVATE_KEY=ORACLE_SIGNER_PRIVATE_KEY:latest,RELAYER_PRIVATE_KEY=RELAYER_PRIVATE_KEY:latest,MONGODB_URI=MONGODB_URI:latest,CRON_SECRET=CRON_SECRET:latest,ADMIN_API_SECRET=ADMIN_API_SECRET:latest"
 ```
 
@@ -173,17 +173,26 @@ in `FE/Dockerfile`), the backend silently compiles with `config/contracts.ts`'s 
 values (chain `31337`) no matter what `--set-env-vars` says.
 
 **Deliberately not set above, and pointless to set: `NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS` /
-`NEXT_PUBLIC_STAKE_TOKEN_ADDRESS`.** `config/contracts.ts` hardcodes the current mainnet (chain
-`4663`) factory/stake-token addresses in source, keyed by chain ID, and **ignores these env vars
-entirely for a listed chain ID** — there is no env var anywhere that can override them, so every
-deploy target gets the identical value from the same git commit with zero possibility of drift.
-This is what used to break: `lib/chainVerify.ts` functions like `verifyDuelCreated` compare
-`event.address` against the backend's own compiled `CONTRACTS.battleEscrowFactory`, and if that
-value had drifted stale in only one of the two build targets (a forgotten `--set-build-env-vars`,
-or an env var updated in one dashboard but not the other), it threw `"... event not found"` for a
-perfectly valid transaction. These two vars now only matter for a chain ID with **no** entry in
-`config/contracts.ts`'s map — local Anvil dev. On a real factory redeploy, update that map (and
-`Contracts/README.md#deployments`), not these flags.
+`NEXT_PUBLIC_STAKE_TOKEN_ADDRESS` / `NEXT_PUBLIC_RPC_URL`.** `config/contracts.ts` hardcodes the
+current mainnet (chain `4663`) factory/stake-token addresses and RPC URL in source, keyed by chain
+ID, and **ignores these env vars entirely for a listed chain ID** — there is no env var anywhere
+that can override them, so every deploy target gets the identical value from the same git commit
+with zero possibility of drift. This is what used to break: `lib/chainVerify.ts` functions like
+`verifyDuelCreated` compare `event.address` against the backend's own compiled
+`CONTRACTS.battleEscrowFactory`, and if that value had drifted stale in only one of the two build
+targets (a forgotten `--set-build-env-vars`, or an env var updated in one dashboard but not the
+other), it threw `"... event not found"` for a perfectly valid transaction. The same class of bug
+hit `NEXT_PUBLIC_RPC_URL`: a stale/missing build-time value compiled in as
+`lib/chainClient.ts`/`lib/chainVerify.ts`/`lib/settlementRelayer.ts`/`lib/fundingSource.ts`'s
+`'http://127.0.0.1:8545'` fallback, so the backend tried to reach a local Anvil node that doesn't
+exist in Cloud Run and every chain read failed with `fetch failed`. These three vars now only
+matter for a chain ID with **no** entry in `config/contracts.ts`'s map — local Anvil dev. On a real
+factory redeploy or RPC provider change, update that map (and `Contracts/README.md#deployments` for
+the addresses), not these flags. `config/contracts.ts`'s `rpcUrl` currently points at a paid
+Alchemy endpoint rather than the public `rpc.mainnet.chain.robinhood.com` one — a deliberate choice
+for reliability; note this value is also imported by the browser-side wagmi config
+(`config/chains.ts`/`config/wagmiConfig.ts`), so the URL (including its API key) ships in the
+public JS bundle. Rate-limit/domain-restrict that key on Alchemy's dashboard accordingly.
 
 `--allow-unauthenticated` is required — Vercel's proxy and end users both
 need to reach this service without a GCP identity token. The route-level
@@ -223,14 +232,14 @@ from `FE/.env.vercel.example`:
 |---|---|
 | `BACKEND_API_URL` | the Cloud Run Service URL from Part 3 |
 | `NEXT_PUBLIC_CHAIN_ID` | `4663` |
-| `NEXT_PUBLIC_RPC_URL` | `https://rpc.mainnet.chain.robinhood.com` |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | from [cloud.reown.com](https://cloud.reown.com) |
 
-Leave `NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS`/`NEXT_PUBLIC_STAKE_TOKEN_ADDRESS` **unset** —
-`config/contracts.ts` hardcodes the current mainnet addresses for chain `4663` and ignores these
-env vars entirely for that chain ID, so Vercel and Cloud Run resolve to the same value
-automatically with no dashboard entry on either side that could ever drift (see Part 3's note on
-the matching Cloud Run flags). Setting one here has no effect on chain `4663`.
+Leave `NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS`/`NEXT_PUBLIC_STAKE_TOKEN_ADDRESS`/
+`NEXT_PUBLIC_RPC_URL` **unset** — `config/contracts.ts` hardcodes the current mainnet
+addresses/RPC for chain `4663` and ignores these env vars entirely for that chain ID, so Vercel and
+Cloud Run resolve to the same values automatically with no dashboard entry on either side that
+could ever drift (see Part 3's note on the matching Cloud Run flags). Setting one here has no
+effect on chain `4663`.
 
 Then deploy:
 
@@ -376,6 +385,7 @@ duels:
 | `settle()`/`voidActive()` reverts "invalid oracle signature" right after a signer rotation | The duel being settled was activated under the *old* signer; confirm `ORACLE_SIGNER_PRIVATE_KEY_PREVIOUS` is still set and matches |
 | New duel creation blocked with "New duels are paused while we recover the price feed" | The scan cron isn't running/succeeding — check `OracleHealthSample` and the scan job's Cloud Scheduler history |
 | Duel creation fails right after wallet confirmation with "DuelCreated event not found for this wallet in that transaction" | The Cloud Run backend's compiled `CONTRACTS.battleEscrowFactory` doesn't match the factory address the transaction actually used. For chain `4663`, `config/contracts.ts` hardcodes the address and ignores the env var entirely, so this means the factory really was redeployed without updating `config/contracts.ts`'s map (and redeploying both targets) — update the map, not an env var. If this happens on a chain ID with *no* entry in that map (local Anvil dev), it's the older class of bug: remember `--set-build-env-vars` on Cloud Run — `--set-env-vars` alone only configures the *deployed revision's* runtime environment, too late for Next.js's build-time inlining of `NEXT_PUBLIC_*`. |
+| Any chain-reading request fails with `HTTP request failed. URL: http://127.0.0.1:8545/ ... fetch failed` | The backend compiled with the `'http://127.0.0.1:8545'` fallback instead of a real RPC — there's no Anvil node in Cloud Run/Vercel to answer that. For chain `4663`, `config/contracts.ts` hardcodes `rpcUrl`, so this shouldn't happen unless you're on an older build; redeploy after pulling the fix. On a chain ID with no entry in that map, it's the same `--set-build-env-vars` gap as the row above, for `NEXT_PUBLIC_RPC_URL` instead. |
 
 ---
 

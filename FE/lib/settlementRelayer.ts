@@ -1,6 +1,6 @@
 import { createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { BattleEscrowAbi } from '@/config/contracts';
+import { BattleEscrowAbi, CONTRACTS } from '@/config/contracts';
 import {
     chain,
     publicClient,
@@ -143,7 +143,7 @@ async function relay(duel: IDuel): Promise<RelayOutcome> {
         const hash = await createWalletClient({
             account,
             chain,
-            transport: http(process.env.NEXT_PUBLIC_RPC_URL ?? 'http://127.0.0.1:8545'),
+            transport: http(CONTRACTS.rpcUrl),
         }).writeContract(request);
         broadcast = true;
 

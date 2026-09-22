@@ -2,6 +2,7 @@ import { base, baseSepolia, foundry, mainnet, sepolia } from 'viem/chains';
 import { createConfig, http } from 'wagmi';
 import { getDefaultConfig } from 'connectkit';
 import { robinhoodChain } from './chains';
+import { ROBINHOOD_CHAIN_RPC_URL } from './contracts';
 
 /**
  * Plain wagmi + ConnectKit -- no Privy. ConnectKit's getDefaultConfig wires
@@ -28,10 +29,11 @@ export const wagmiConfig = createConfig(
         // longer needs it.
         chains: [robinhoodChain, foundry, mainnet, sepolia, base, baseSepolia],
         transports: {
-            // NEXT_PUBLIC_RPC_URL is Robinhood Chain's RPC (see .env.example) --
-            // foundry always points at local Anvil regardless of it, since both
-            // chains are in this list at once and shouldn't share one URL.
-            [robinhoodChain.id]: http(process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc.mainnet.chain.robinhood.com'),
+            // ROBINHOOD_CHAIN_RPC_URL (config/contracts.ts) is Robinhood Chain's
+            // RPC -- foundry always points at local Anvil regardless of it,
+            // since both chains are in this list at once and shouldn't share
+            // one URL.
+            [robinhoodChain.id]: http(ROBINHOOD_CHAIN_RPC_URL),
             [foundry.id]: http('http://127.0.0.1:8545'),
             [mainnet.id]: http(),
             [sepolia.id]: http(),

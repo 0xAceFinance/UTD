@@ -23,7 +23,7 @@ const publicClient = createPublicClient({
     // fail fast (falling back to relying on shared-IP alone for that pair)
     // rather than stacking viem's default retry-with-backoff behavior onto
     // every single duel action.
-    transport: http(process.env.NEXT_PUBLIC_RPC_URL ?? 'http://127.0.0.1:8545', { timeout: 2_000, retryCount: 0 }),
+    transport: http(CONTRACTS.rpcUrl, { timeout: 2_000, retryCount: 0 }),
 });
 
 /**

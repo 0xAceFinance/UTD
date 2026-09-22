@@ -1,4 +1,5 @@
 import { defineChain } from 'viem';
+import { ROBINHOOD_CHAIN_RPC_URL } from './contracts';
 
 /**
  * Robinhood Chain mainnet (chain id 4663) -- see Contracts/README.md
@@ -18,7 +19,7 @@ export const robinhoodChain = defineChain({
     name: 'Robinhood Chain',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     rpcUrls: {
-        default: { http: [process.env.NEXT_PUBLIC_RPC_URL || 'https://rpc.mainnet.chain.robinhood.com'] },
+        default: { http: [ROBINHOOD_CHAIN_RPC_URL] },
     },
     blockExplorers: {
         default: { name: 'Blockscout', url: 'https://robinhoodchain.blockscout.com' },

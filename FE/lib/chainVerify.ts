@@ -11,7 +11,7 @@ import { CONTRACTS, BattleEscrowFactoryAbi, BattleEscrowAbi } from '@/config/con
  */
 const publicClient = createPublicClient({
     chain: { ...foundry, id: CONTRACTS.chainId },
-    transport: http(process.env.NEXT_PUBLIC_RPC_URL ?? 'http://127.0.0.1:8545'),
+    transport: http(CONTRACTS.rpcUrl),
 });
 
 async function getSuccessfulReceipt(txHash: `0x${string}`) {
