@@ -158,8 +158,8 @@ real private key into a chat/AI tool.
 gcloud run deploy utd-backend \
   --source . \
   --allow-unauthenticated \
-  --set-build-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E,NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
-  --set-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS=0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E,NEXT_PUBLIC_STAKE_TOKEN_ADDRESS=0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
+  --set-build-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
+  --set-env-vars "NEXT_PUBLIC_CHAIN_ID=4663,NEXT_PUBLIC_RPC_URL=https://rpc.mainnet.chain.robinhood.com,NEXT_PUBLIC_UTD_X_URL=https://x.com/UTD_RHC,NEXT_PUBLIC_UTD_TELEGRAM_URL=https://t.me/utd_rh" \
   --set-secrets "ORACLE_SIGNER_PRIVATE_KEY=ORACLE_SIGNER_PRIVATE_KEY:latest,RELAYER_PRIVATE_KEY=RELAYER_PRIVATE_KEY:latest,MONGODB_URI=MONGODB_URI:latest,CRON_SECRET=CRON_SECRET:latest,ADMIN_API_SECRET=ADMIN_API_SECRET:latest"
 ```
 
@@ -170,12 +170,20 @@ paths, since shared modules like `config/contracts.ts` are also imported by clie
 exist yet during the build Cloud Build just ran — so without `--set-build-env-vars` (which Cloud
 Run forwards into the Dockerfile's build stage as Docker build args, matching the `ARG`s declared
 in `FE/Dockerfile`), the backend silently compiles with `config/contracts.ts`'s local-dev fallback
-values (chain `31337`, empty contract addresses) no matter what `--set-env-vars` says. The
-symptom is exactly the kind of bug this produces: `lib/chainVerify.ts` functions like
-`verifyDuelCreated` compare `event.address` against the backend's own (wrong) compiled
-`CONTRACTS.battleEscrowFactory` and throw `"... event not found"` even for a perfectly valid
-transaction, because the backend is checking against the wrong address. Both flags carry the same
-values for now (`--set-env-vars` doesn't hurt and covers any future runtime-only reads).
+values (chain `31337`) no matter what `--set-env-vars` says.
+
+**Deliberately not set above, and pointless to set: `NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS` /
+`NEXT_PUBLIC_STAKE_TOKEN_ADDRESS`.** `config/contracts.ts` hardcodes the current mainnet (chain
+`4663`) factory/stake-token addresses in source, keyed by chain ID, and **ignores these env vars
+entirely for a listed chain ID** — there is no env var anywhere that can override them, so every
+deploy target gets the identical value from the same git commit with zero possibility of drift.
+This is what used to break: `lib/chainVerify.ts` functions like `verifyDuelCreated` compare
+`event.address` against the backend's own compiled `CONTRACTS.battleEscrowFactory`, and if that
+value had drifted stale in only one of the two build targets (a forgotten `--set-build-env-vars`,
+or an env var updated in one dashboard but not the other), it threw `"... event not found"` for a
+perfectly valid transaction. These two vars now only matter for a chain ID with **no** entry in
+`config/contracts.ts`'s map — local Anvil dev. On a real factory redeploy, update that map (and
+`Contracts/README.md#deployments`), not these flags.
 
 `--allow-unauthenticated` is required — Vercel's proxy and end users both
 need to reach this service without a GCP identity token. The route-level
@@ -216,9 +224,13 @@ from `FE/.env.vercel.example`:
 | `BACKEND_API_URL` | the Cloud Run Service URL from Part 3 |
 | `NEXT_PUBLIC_CHAIN_ID` | `4663` |
 | `NEXT_PUBLIC_RPC_URL` | `https://rpc.mainnet.chain.robinhood.com` |
-| `NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS` | your deployed factory address (Part 2's output) |
-| `NEXT_PUBLIC_STAKE_TOKEN_ADDRESS` | your stake token address (USDG) |
 | `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` | from [cloud.reown.com](https://cloud.reown.com) |
+
+Leave `NEXT_PUBLIC_BATTLE_ESCROW_FACTORY_ADDRESS`/`NEXT_PUBLIC_STAKE_TOKEN_ADDRESS` **unset** —
+`config/contracts.ts` hardcodes the current mainnet addresses for chain `4663` and ignores these
+env vars entirely for that chain ID, so Vercel and Cloud Run resolve to the same value
+automatically with no dashboard entry on either side that could ever drift (see Part 3's note on
+the matching Cloud Run flags). Setting one here has no effect on chain `4663`.
 
 Then deploy:
 
@@ -363,7 +375,7 @@ duels:
 | Geofence/sybil checks seem to never trigger | One of the two header-forwarding checks in the verification checklist is failing silently — confirm with `curl`, not just app behavior |
 | `settle()`/`voidActive()` reverts "invalid oracle signature" right after a signer rotation | The duel being settled was activated under the *old* signer; confirm `ORACLE_SIGNER_PRIVATE_KEY_PREVIOUS` is still set and matches |
 | New duel creation blocked with "New duels are paused while we recover the price feed" | The scan cron isn't running/succeeding — check `OracleHealthSample` and the scan job's Cloud Scheduler history |
-| Duel creation fails right after wallet confirmation with "DuelCreated event not found for this wallet in that transaction" | The Cloud Run backend was built without `--set-build-env-vars` (or with stale values in it) — its compiled `CONTRACTS.battleEscrowFactory` doesn't match the factory address the transaction actually used. Redeploy with `--set-build-env-vars` set to the *current* factory/stake-token/chain values (§3), not just `--set-env-vars`. |
+| Duel creation fails right after wallet confirmation with "DuelCreated event not found for this wallet in that transaction" | The Cloud Run backend's compiled `CONTRACTS.battleEscrowFactory` doesn't match the factory address the transaction actually used. For chain `4663`, `config/contracts.ts` hardcodes the address and ignores the env var entirely, so this means the factory really was redeployed without updating `config/contracts.ts`'s map (and redeploying both targets) — update the map, not an env var. If this happens on a chain ID with *no* entry in that map (local Anvil dev), it's the older class of bug: remember `--set-build-env-vars` on Cloud Run — `--set-env-vars` alone only configures the *deployed revision's* runtime environment, too late for Next.js's build-time inlining of `NEXT_PUBLIC_*`. |
 
 ---
 
