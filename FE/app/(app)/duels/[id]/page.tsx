@@ -32,6 +32,7 @@ import { DuelDTO, canForceRefund, formatUsd, pctReturn } from "../../components/
 
 import { GmgnLink } from "../../components/duel/GmgnLink"
 import { DuelLiveChart } from "../../components/duel/DuelLiveChart"
+import { SideBySideCharts } from "../../components/duel/DexScreenerChart"
 import { arcadeAudio } from "@/lib/sound/arcadeAudio"
 
 
@@ -248,7 +249,7 @@ export default function DuelDetailPage() {
         const urgent = openCountdown.totalSec < 60
         const deadlinePassed = openCountdown.totalSec <= 0
         return (
-            <div className="mx-auto max-w-xl space-y-4">
+            <div className="mx-auto max-w-3xl space-y-4">
                 <Link href="/duels" className="inline-flex items-center gap-1.5 font-mono text-xs text-[var(--dim)] hover:text-white transition-colors mb-2">
                     <ArrowLeft className="h-3.5 w-3.5" /> Back to Duels
                 </Link>
@@ -260,11 +261,19 @@ export default function DuelDetailPage() {
                         <SideTag side="B" label={duel.tokenB.symbol} />
                     </div>
 
-                    {/* Check both tokens on GMGN before taking the open slot. */}
+                    {/* Check both tokens (GMGN + DexScreener chart) before taking the open slot. */}
                     <div className="mt-4 grid grid-cols-2 gap-2">
                         <GmgnLink tokenAddress={duel.tokenA.tokenAddress} symbol={duel.tokenA.symbol} label={`${duel.tokenA.symbol} on GMGN`} className="h-10" />
                         <GmgnLink tokenAddress={duel.tokenB.tokenAddress} symbol={duel.tokenB.symbol} label={`${duel.tokenB.symbol} on GMGN`} className="h-10" />
                     </div>
+
+                    <SideBySideCharts
+                        className="mt-4 text-left"
+                        sides={[
+                            { side: "A", symbol: duel.tokenA.symbol, tokenAddress: duel.tokenA.tokenAddress },
+                            { side: "B", symbol: duel.tokenB.symbol, tokenAddress: duel.tokenB.tokenAddress },
+                        ]}
+                    />
 
                     <div className="mt-8">
                         <div className="font-mono text-[11px] text-[var(--faint)] uppercase tracking-wider">

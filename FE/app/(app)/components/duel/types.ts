@@ -10,6 +10,10 @@ export interface DuelTokenDTO {
     liquidityUsd: number
     volume24hUsd: number
     change24hPct: number
+    /** DexScreener token logo, when it has one. */
+    imageUrl?: string
+    /** Platform-pinned (lib/pinnedTokens.ts); listed first with a star. */
+    pinned?: boolean
 }
 
 export interface StoredPoolSample {

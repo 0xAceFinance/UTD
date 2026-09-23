@@ -3,6 +3,7 @@ import { DexScreenerSource, getLivePricing } from "./dexScreenerSource";
 import { connectToDatabase } from "./mongoose";
 import DuelToken from "./models/DuelToken";
 import OracleHealthSample from "./models/OracleHealthSample";
+import { isPinnedConflict, upsertPinnedTokens } from "./pinnedTokens";
 
 /** Minimum time between re-price passes over today's Top 10 (see repriceTopTen
  * below). Matches the cadence lib/duelEngine.ts already uses for a live
@@ -21,14 +22,17 @@ export async function runDailyScan() {
 
   try {
     const source = new DexScreenerSource();
-    const candidates = await source.listCandidates();
+    // Pinned tokens (lib/pinnedTokens.ts) are listed separately, above the
+    // Top 10; drop them (and symbol lookalikes) here so they neither take a
+    // Top 10 slot nor collide on DuelToken's unique symbol.
+    const candidates = (await source.listCandidates()).filter((c) => !isPinnedConflict(c));
 
     // The gladiator filter: every candidate must clear every Section 01 gate
     // (market cap, liquidity, volume, traders, age, rug-check, LP-lock,
     // holder concentration, blocklist) to earn a spot in today's arena.
     const result = selectTopTen(candidates);
 
-    await DuelToken.deleteMany({});
+    await DuelToken.deleteMany({ pinned: { $ne: true } });
 
     const docs = result.selected.map((scored, i) => {
       const candidate = candidates.find((c) => c.tokenAddress === scored.tokenAddress);
@@ -43,10 +47,14 @@ export async function runDailyScan() {
         liquidityUsd: scored.liquidityUsd,
         volume24hUsd: candidate?.volume24hUsd ?? 0,
         change24hPct: display?.change24hPct ?? 0,
+        imageUrl: display?.imageUrl,
       };
     });
 
     if (docs.length > 0) await DuelToken.insertMany(docs);
+    // Non-fatal: a pinned token's existing doc survives the deleteMany above,
+    // so a transient refresh miss only leaves its numbers a scan behind.
+    await upsertPinnedTokens(source).catch(() => {});
 
     await recordOracleHealth(true);
 

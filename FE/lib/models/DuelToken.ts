@@ -21,6 +21,11 @@ export interface IDuelToken extends Document {
     liquidityUsd: number;
     volume24hUsd: number;
     change24hPct: number;
+    /** DexScreener token logo, when it has one. */
+    imageUrl?: string;
+    /** Platform-pinned (lib/pinnedTokens.ts): always listed first, never
+     * rotated out by the daily scan, and not subject to its gates. */
+    pinned: boolean;
     updatedAt: Date;
 }
 
@@ -34,6 +39,8 @@ const DuelTokenSchema = new Schema<IDuelToken>({
     liquidityUsd: { type: Number, required: true },
     volume24hUsd: { type: Number, required: true },
     change24hPct: { type: Number, required: true },
+    imageUrl: { type: String },
+    pinned: { type: Boolean, default: false, index: true },
     updatedAt: { type: Date, default: Date.now },
 });
 

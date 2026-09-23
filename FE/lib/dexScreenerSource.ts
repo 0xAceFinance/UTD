@@ -43,6 +43,7 @@ interface DexPair {
   fdv?: number;
   marketCap?: number;
   pairCreatedAt?: number;
+  info?: { imageUrl?: string };
 }
 
 async function fetchJson<T>(path: string): Promise<T> {
@@ -151,13 +152,27 @@ function toCandidate(pair: DexPair): TokenCandidate | null {
   };
 }
 
+export interface TokenDisplayInfo {
+  name: string;
+  change24hPct: number;
+  /** DexScreener's token logo; absent for tokens with no DexScreener profile. */
+  imageUrl?: string;
+}
+
 export class DexScreenerSource implements DataSource {
-  /** symbol -> display info not carried by TokenCandidate, populated by the last listCandidates() call. */
-  readonly displayInfo = new Map<string, { name: string; change24hPct: number }>();
+  /** symbol -> display info not carried by TokenCandidate, populated by listCandidates()/fetchTokens(). */
+  readonly displayInfo = new Map<string, TokenDisplayInfo>();
 
   async listCandidates(): Promise<TokenCandidate[]> {
     const addresses = await discoverAddresses();
-    const pairs = await fetchPairsForAddresses([...addresses]);
+    return this.fetchTokens([...addresses]);
+  }
+
+  /** Candidates for a known set of token addresses, skipping discovery --
+   * used directly for pinned tokens (lib/pinnedTokens.ts), which are listed
+   * regardless of whether discovery happens to surface them. */
+  async fetchTokens(addresses: string[]): Promise<TokenCandidate[]> {
+    const pairs = await fetchPairsForAddresses(addresses);
     const best = bestPairPerToken(pairs);
 
     const candidates: TokenCandidate[] = [];
@@ -167,6 +182,7 @@ export class DexScreenerSource implements DataSource {
       this.displayInfo.set(candidate.symbol, {
         name: pair.baseToken.name || candidate.symbol,
         change24hPct: pair.priceChange?.h24 ?? 0,
+        imageUrl: pair.info?.imageUrl,
       });
       candidates.push(candidate);
     }

@@ -12,6 +12,8 @@ import { getStoredRef } from "@/lib/referralClient"
 import { useFactoryState } from "@/hooks/useFactoryState"
 import { DuelTokenDTO } from "../../components/duel/types"
 import { PausedBanner } from "../../components/duel/PausedBanner"
+import { TokenLogo } from "../../components/duel/TokenLogo"
+import { SideBySideCharts } from "../../components/duel/DexScreenerChart"
 
 const QUICK_BUY_INS = [25, 50, 100, 250]
 
@@ -29,6 +31,14 @@ export default function CreateDuelPage() {
     const [submitting, setSubmitting] = useState(false)
     const [stage, setStage] = useState<"idle" | "wallet" | "saving">("idle")
     const factory = useFactoryState()
+
+    // The Tokens page's "Challenge" links here as ?tokenA=SYMBOL. Read it
+    // from window.location rather than useSearchParams so this page needs no
+    // Suspense boundary.
+    useEffect(() => {
+        const preselected = new URLSearchParams(window.location.search).get("tokenA")
+        if (preselected) setTokenA(preselected)
+    }, [])
 
     useEffect(() => {
         const load = () =>
@@ -129,7 +139,7 @@ export default function CreateDuelPage() {
     }
 
     return (
-        <div className="mx-auto max-w-2xl space-y-7">
+        <div className="mx-auto max-w-4xl space-y-7">
             {/* The top bar already says NEW DUEL; this is just the one-line brief. */}
             {paused && <PausedBanner />}
             <p className="text-[14px] text-[var(--dim)]">
@@ -169,14 +179,22 @@ export default function CreateDuelPage() {
                                               : "bg-[var(--s1)] hover:bg-[var(--s2)]"
                                     }`}
                                 >
-                                    <div className="utd-pixel text-xs text-white">{t.symbol}</div>
+                                    <div className="flex items-center gap-2">
+                                        <TokenLogo symbol={t.symbol} imageUrl={t.imageUrl} pinned={t.pinned} className="h-5 w-5" />
+                                        <div className="utd-pixel truncate text-xs text-white">{t.symbol}</div>
+                                    </div>
                                     <div className="utd-body text-[11px] text-[var(--faint)] truncate mt-0.5">
                                         {t.name}
                                     </div>
                                     <div className="mt-2 font-mono text-[10px]">
                                         {isA && <span className="text-[var(--hot)] font-semibold">Side A</span>}
                                         {isB && <span className="text-[var(--cool)] font-semibold">Side B</span>}
-                                        {!isA && !isB && <span className="text-[var(--faint)]">#{t.rank}</span>}
+                                        {!isA && !isB &&
+                                            (t.pinned ? (
+                                                <span className="text-[var(--acid)]">★ Featured</span>
+                                            ) : (
+                                                <span className="text-[var(--faint)]">#{t.rank}</span>
+                                            ))}
                                     </div>
                                 </button>
                             )
@@ -184,6 +202,14 @@ export default function CreateDuelPage() {
                     </div>
                 )}
             </div>
+
+            {/* The picked tokens' charts head to head, before committing a stake. */}
+            <SideBySideCharts
+                sides={[
+                    { side: "A", symbol: tokenA ?? undefined, tokenAddress: tokens.find((t) => t.symbol === tokenA)?.tokenAddress },
+                    { side: "B", symbol: tokenB ?? undefined, tokenAddress: tokens.find((t) => t.symbol === tokenB)?.tokenAddress },
+                ]}
+            />
 
             {/* Step 2: Choose Side */}
             <div className="space-y-3">

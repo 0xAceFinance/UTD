@@ -4,13 +4,17 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { DuelTokenDTO, formatUsd } from "../components/duel/types"
 import { GmgnLink } from "../components/duel/GmgnLink"
+import { TokenLogo } from "../components/duel/TokenLogo"
+import { DexScreenerChart } from "../components/duel/DexScreenerChart"
 
 /** Shared column template for the desktop table (header + rows). */
-const COLS = "md:grid-cols-[40px_minmax(0,1fr)_96px_96px_96px_80px_200px]"
+const COLS = "md:grid-cols-[40px_minmax(0,1fr)_96px_96px_96px_80px_290px]"
 
 export default function TokensPage() {
     const [tokens, setTokens] = useState<DuelTokenDTO[]>([])
     const [loading, setLoading] = useState(true)
+    /** Token whose DexScreener chart is expanded; one at a time. */
+    const [openChart, setOpenChart] = useState<string | null>(null)
 
     useEffect(() => {
         const load = () =>
@@ -64,25 +68,38 @@ export default function TokensPage() {
                         {tokens.map((t) => {
                             const up = t.change24hPct >= 0
                             const change = `${up ? "+" : ""}${t.change24hPct.toFixed(1)}%`
+                            const chartOpen = openChart === t._id
                             return (
                                 <li
                                     key={t._id}
-                                    className={`app-card grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 p-4 md:gap-4 md:py-3 ${COLS}`}
+                                    className={`app-card grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-3 p-4 md:gap-4 md:py-3 ${COLS} ${
+                                        t.pinned ? "ring-1 ring-inset ring-[var(--acid)]" : ""
+                                    }`}
                                 >
                                     <span className="hidden font-mono text-[12px] text-[var(--faint)] md:block">
-                                        {String(t.rank).padStart(2, "0")}
+                                        {t.pinned ? (
+                                            <span className="text-[var(--acid)]" aria-label="Featured">★</span>
+                                        ) : (
+                                            String(t.rank).padStart(2, "0")
+                                        )}
                                     </span>
 
-                                    <div className="min-w-0">
-                                        <div className="flex items-baseline gap-2">
-                                            <span className="font-mono text-[11px] text-[var(--faint)] md:hidden">
-                                                #{t.rank}
-                                            </span>
-                                            <span className="utd-pixel truncate text-[11px] text-white">{t.symbol}</span>
-                                        </div>
-                                        <div className="mt-1 truncate text-[13px] text-[var(--faint)]">{t.name}</div>
-                                        <div className="mt-1 truncate font-mono text-[12px] text-[var(--faint)] md:hidden">
-                                            Liq {formatUsd(t.liquidityUsd)} · Vol {formatUsd(t.volume24hUsd)}
+                                    <div className="flex min-w-0 items-center gap-3">
+                                        <TokenLogo symbol={t.symbol} imageUrl={t.imageUrl} pinned={t.pinned} />
+                                        <div className="min-w-0">
+                                            <div className="flex items-baseline gap-2">
+                                                <span className="font-mono text-[11px] text-[var(--faint)] md:hidden">
+                                                    {t.pinned ? <span className="text-[var(--acid)]">★</span> : `#${t.rank}`}
+                                                </span>
+                                                <span className="utd-pixel truncate text-[11px] text-white">{t.symbol}</span>
+                                                {t.pinned && (
+                                                    <span className="utd-pixel text-[7px] text-[var(--acid)]">FEATURED</span>
+                                                )}
+                                            </div>
+                                            <div className="mt-1 truncate text-[13px] text-[var(--faint)]">{t.name}</div>
+                                            <div className="mt-1 truncate font-mono text-[12px] text-[var(--faint)] md:hidden">
+                                                Liq {formatUsd(t.liquidityUsd)} · Vol {formatUsd(t.volume24hUsd)}
+                                            </div>
                                         </div>
                                     </div>
 
@@ -110,7 +127,15 @@ export default function TokensPage() {
                                     </span>
 
                                     {/* Actions: a full-width pair on phones, right-aligned on desktop. */}
-                                    <div className="col-span-2 grid grid-cols-2 gap-2 border-t border-[var(--line)] pt-3 md:col-span-1 md:flex md:justify-end md:border-0 md:pt-0">
+                                    <div className="col-span-2 grid grid-cols-3 gap-2 border-t border-[var(--line)] pt-3 md:col-span-1 md:flex md:justify-end md:border-0 md:pt-0">
+                                        <button
+                                            type="button"
+                                            onClick={() => setOpenChart(chartOpen ? null : t._id)}
+                                            aria-expanded={chartOpen}
+                                            className={`app-chip h-10 justify-center md:h-9 ${chartOpen ? "text-[var(--acid)]" : ""}`}
+                                        >
+                                            Chart
+                                        </button>
                                         <GmgnLink tokenAddress={t.tokenAddress} symbol={t.symbol} className="h-10 md:h-9" />
                                         <Link
                                             href={`/duels/create?tokenA=${t.symbol}`}
@@ -119,6 +144,12 @@ export default function TokensPage() {
                                             Challenge
                                         </Link>
                                     </div>
+
+                                    {chartOpen && (
+                                        <div className="col-span-full">
+                                            <DexScreenerChart tokenAddress={t.tokenAddress} symbol={t.symbol} />
+                                        </div>
+                                    )}
                                 </li>
                             )
                         })}

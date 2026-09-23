@@ -11,3 +11,8 @@ import { CHAIN_ID } from "./dexScreenerSource"
 export function gmgnTokenUrl(tokenAddress: string): string {
     return `https://gmgn.ai/${CHAIN_ID}/token/${tokenAddress}`
 }
+
+/** Embeddable DexScreener chart for a token (or pair) address. */
+export function dexScreenerEmbedUrl(address: string): string {
+    return `https://dexscreener.com/${CHAIN_ID}/${address}?embed=1&theme=dark&trades=0&info=0`
+}

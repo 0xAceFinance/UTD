@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react"
 import { Activity } from "lucide-react"
 import { DuelDTO, formatUsd, pctReturn } from "./types"
-import { CHAIN_ID } from "@/lib/dexScreenerSource"
+import { DexScreenerChart } from "./DexScreenerChart"
 import { arcadeAudio } from "@/lib/sound/arcadeAudio"
 
 interface ChartPoint {
@@ -742,27 +742,13 @@ export function DuelLiveChart({
             )}
 
             {/* TAB 2: Token A DexScreener Candlestick Frame */}
-            {activeTab === "tokenA" && (
-                <div className="relative w-full aspect-[16/9] min-h-[380px] bg-[var(--s0)] border border-[var(--line)] overflow-hidden">
-                    <iframe
-                        src={`https://dexscreener.com/${CHAIN_ID}/${duel.tokenA.tokenAddress}?embed=1&theme=dark&trades=0&info=0`}
-                        title={`${duel.tokenA.symbol} DexScreener Chart`}
-                        className="w-full h-full border-0"
-                        loading="lazy"
-                    />
-                </div>
+            {activeTab === "tokenA" && duel.tokenA.tokenAddress && (
+                <DexScreenerChart tokenAddress={duel.tokenA.tokenAddress} symbol={duel.tokenA.symbol} />
             )}
 
             {/* TAB 3: Token B DexScreener Candlestick Frame */}
-            {activeTab === "tokenB" && (
-                <div className="relative w-full aspect-[16/9] min-h-[380px] bg-[var(--s0)] border border-[var(--line)] overflow-hidden">
-                    <iframe
-                        src={`https://dexscreener.com/${CHAIN_ID}/${duel.tokenB.tokenAddress}?embed=1&theme=dark&trades=0&info=0`}
-                        title={`${duel.tokenB.symbol} DexScreener Chart`}
-                        className="w-full h-full border-0"
-                        loading="lazy"
-                    />
-                </div>
+            {activeTab === "tokenB" && duel.tokenB.tokenAddress && (
+                <DexScreenerChart tokenAddress={duel.tokenB.tokenAddress} symbol={duel.tokenB.symbol} />
             )}
         </div>
     )

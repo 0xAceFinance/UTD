@@ -9,6 +9,7 @@ vi.mock('@/lib/dexScreenerSource', () => ({
   DexScreenerSource: class {
     displayInfo = new Map();
     listCandidates = listCandidatesMock;
+    fetchTokens = async () => [];
   },
 }));
 
@@ -214,15 +215,17 @@ describe('GET /api/duels (list + filters)', () => {
 });
 
 describe('GET /api/duel-tokens', () => {
-  it('returns at most 10, ordered by rank', async () => {
+  it('returns the pinned token first, then at most 10 ordered by rank', async () => {
     for (let i = 1; i <= 12; i++) {
       await DuelToken.create({ symbol: `T${i}`, name: `T${i}`, rank: i, tokenAddress: `0x${i}`.padEnd(42, '0'), totalSupply: 1, marketCapUsd: 1, liquidityUsd: 1, volume24hUsd: 1, change24hPct: 0 });
     }
+    await DuelToken.create({ symbol: 'GOOD', name: 'Good In The Hood', rank: 0, pinned: true, tokenAddress: '0x5f62C57e5C537887117EeF828b7E3Ad41C009FEb', totalSupply: 1, marketCapUsd: 1, liquidityUsd: 1, volume24hUsd: 1, change24hPct: 0 });
     const res = await duelTokensRoute();
     const tokens = (await body(res)).data;
-    expect(tokens).toHaveLength(10);
-    expect(tokens[0].rank).toBe(1);
-    expect(tokens[9].rank).toBe(10);
+    expect(tokens).toHaveLength(11);
+    expect(tokens[0]).toMatchObject({ symbol: 'GOOD', pinned: true });
+    expect(tokens[1].rank).toBe(1);
+    expect(tokens[10].rank).toBe(10);
   });
 });
 
