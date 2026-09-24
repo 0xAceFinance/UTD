@@ -70,7 +70,7 @@ const KNOWN_DEPLOYMENTS: Record<
 > = {
   4663: {
     // Robinhood Chain mainnet -- BattleEscrowFactory (Contracts/README.md#deployments)
-    battleEscrowFactory: "0xE78FE1cDac8D1fcBaE237a98D370946Db6ef1F3E",
+    battleEscrowFactory: "0x783321348F8Ac9badA824C19a2B21F03a974364f",
     // USDG "Global Dollar" (Paxos), 6 decimals
     stakeToken: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
     rpcUrl: "https://robinhood-mainnet.g.alchemy.com/v2/T_E1VT8027czrtVr41hsQ",
@@ -85,7 +85,7 @@ const KNOWN_DEPLOYMENTS: Record<
       swapRouter: "0xcaf681a66d020601342297493863e78c959e5cb2",
       quoter: "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
       poolFeeTier: 100,
-      treasury: "0x6d0c0Ac0b60B1BE2D60ad4e6AA868D2612fe4f89",
+      treasury: "0x327ee89c40301b3139C77059e54659EaCF31ee29",
     },
   },
 };
@@ -101,9 +101,9 @@ export const CONTRACTS = {
   stakeToken: (knownForChain?.stakeToken ||
     process.env.NEXT_PUBLIC_STAKE_TOKEN_ADDRESS ||
     "") as `0x${string}`,
-  multicall3: (knownForChain?.multicall3 || process.env.NEXT_PUBLIC_MULTICALL3_ADDRESS || undefined) as
-    | `0x${string}`
-    | undefined,
+  multicall3: (knownForChain?.multicall3 ||
+    process.env.NEXT_PUBLIC_MULTICALL3_ADDRESS ||
+    undefined) as `0x${string}` | undefined,
   // Not env-overridable for a listed chain, same reasoning as the rest of this
   // file -- a wrong swap-path address is a fund-safety issue, not a cosmetic one.
   gasSwap: knownForChain?.gasSwap,
