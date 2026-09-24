@@ -6,13 +6,13 @@ import { WalletClusterGraph, isSuspectedSybilMatch } from '@mcapduel/risk';
 import { getLivePoolSamples } from '@/lib/dexScreenerSource';
 import { signSettlement } from '@/lib/oracleSigner';
 import type { ReferralSettlementTerms } from '@/lib/oracleSigner';
-import { submitSettlement } from '@/lib/settlementRelayer';
+import { runKeeperTick } from '@/lib/settlementRelayer';
 import { toLobbySnapshot, applyLobby } from '@/lib/lobbyAdapter';
 import { computeReferralSnapshot, applyReferralSettlement } from '@/lib/referralAccount';
 import type { ReferralSnapshot } from '@/lib/referralAccount';
 import CombatRecord from '@/lib/models/CombatRecord';
 import WalletSighting from '@/lib/models/WalletSighting';
-import Duel from '@/lib/models/Duel';
+import Duel, { requireTokenB } from '@/lib/models/Duel';
 import type { IDuel, TokenSide, DeferredPayout } from '@/lib/models/Duel';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
@@ -95,7 +95,7 @@ async function refreshSide(side: TokenSide): Promise<void> {
 /** Refreshes a LIVE duel's market caps in place through the real oracle pipeline. No-op for any other status. */
 export async function simulateTick(duel: IDuel): Promise<void> {
   if (duel.status !== 'LIVE' || !duel.startTime) return;
-  await Promise.all([refreshSide(duel.tokenA), refreshSide(duel.tokenB)]);
+  await Promise.all([refreshSide(duel.tokenA), refreshSide(requireTokenB(duel))]);
 }
 
 /**
@@ -152,8 +152,8 @@ async function isSybilMatch(duel: IDuel): Promise<boolean> {
 export function computeWinnerSide(duel: IDuel): 0 | 1 {
   const returnPctA =
     ((duel.tokenA.sustainedPeakMarketCapUsd - duel.tokenA.startMarketCapUsd) / duel.tokenA.startMarketCapUsd) * 100;
-  const returnPctB =
-    ((duel.tokenB.sustainedPeakMarketCapUsd - duel.tokenB.startMarketCapUsd) / duel.tokenB.startMarketCapUsd) * 100;
+  const tokenB = requireTokenB(duel);
+  const returnPctB = ((tokenB.sustainedPeakMarketCapUsd - tokenB.startMarketCapUsd) / tokenB.startMarketCapUsd) * 100;
   return returnPctA >= returnPctB ? 0 : 1;
 }
 
@@ -197,7 +197,7 @@ export async function maybeSettle(duel: IDuel, { relay = true }: { relay?: boole
   // refreshSide already fetches if the last sample is stale, which it will be
   // for a duel that's just crossed its end time) to catch any move in the
   // final seconds before locking in the result.
-  await Promise.all([refreshSide(duel.tokenA), refreshSide(duel.tokenB)]);
+  await Promise.all([refreshSide(duel.tokenA), refreshSide(requireTokenB(duel))]);
 
   const winnerSide = computeWinnerSide(duel);
   const nowSec = Math.floor(Date.now() / 1000);
@@ -295,7 +295,7 @@ export async function retrySettlementSigning(duel: IDuel): Promise<void> {
  */
 function scheduleRelay(duel: IDuel): void {
   try {
-    after(() => submitSettlement(duel));
+    after(() => runKeeperTick());
   } catch {
     // no request scope -- left to the cron
   }
@@ -350,8 +350,8 @@ export async function confirmOnChainRefund(duel: IDuel): Promise<boolean> {
 export async function finalizeSettlement(duel: IDuel, winnerSide: 0 | 1): Promise<void> {
   const returnPctA =
     ((duel.tokenA.sustainedPeakMarketCapUsd - duel.tokenA.startMarketCapUsd) / duel.tokenA.startMarketCapUsd) * 100;
-  const returnPctB =
-    ((duel.tokenB.sustainedPeakMarketCapUsd - duel.tokenB.startMarketCapUsd) / duel.tokenB.startMarketCapUsd) * 100;
+  const tokenB = requireTokenB(duel);
+  const returnPctB = ((tokenB.sustainedPeakMarketCapUsd - tokenB.startMarketCapUsd) / tokenB.startMarketCapUsd) * 100;
   const winnerReturnPct = winnerSide === 0 ? returnPctA : returnPctB;
   const loserReturnPct = winnerSide === 0 ? returnPctB : returnPctA;
 

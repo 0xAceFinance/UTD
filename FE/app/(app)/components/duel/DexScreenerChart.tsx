@@ -39,13 +39,14 @@ export interface ChartSide {
  * Side A and Side B DexScreener charts next to each other (stacked on
  * phones), so a player compares both tokens at once before committing
  * (create page, open-duel join screen). Each chart swaps as soon as its side's
- * pick changes. Renders nothing if neither side has a token yet.
+ * pick changes. Renders nothing if neither side has a token yet. Pass a
+ * single side for a one-token view (create page, an unjoined lobby).
  */
 export function SideBySideCharts({ sides, className = "" }: { sides: ChartSide[]; className?: string }) {
     if (!sides.some((s) => s.tokenAddress)) return null
 
     return (
-        <div className={`grid gap-3 md:grid-cols-2 ${className}`}>
+        <div className={`grid gap-3 ${sides.length > 1 ? "md:grid-cols-2" : ""} ${className}`}>
             {sides.map((s) => (
                 <div key={s.side} className="min-w-0 space-y-2">
                     <div className="flex items-center gap-1.5">

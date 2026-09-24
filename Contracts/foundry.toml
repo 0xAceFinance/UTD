@@ -4,3 +4,6 @@ out = "out"
 libs = ["lib"]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+# test/duel/KeeperBatch.t.sol loads the real Multicall3 runtime bytecode (fetched from chain 4663).
+fs_permissions = [{ access = "read", path = "./test/duel/fixtures" }]

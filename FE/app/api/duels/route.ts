@@ -11,6 +11,7 @@ import { checkCanCreateLobby } from '@/lib/duelGuards';
 import { verifyDuelCreated } from '@/lib/chainVerify';
 import { attributeReferral } from '@/lib/referralAttribution';
 import { resolveDuelToken } from '@/lib/resolveDuelToken';
+import { scheduleKeeperTick } from '@/lib/keeperSchedule';
 import { success, failure } from '@/utils/response';
 
 export async function GET(req: NextRequest) {
@@ -39,10 +40,13 @@ export async function POST(req: NextRequest) {
         const body = await req.json();
         const { creatorWallet, tokenASymbol, tokenBSymbol, tokenASnapshot, tokenBSnapshot, txHash, refCode } = body;
 
-        if (!creatorWallet || !tokenASymbol || !tokenBSymbol || !txHash) {
-            return failure('creatorWallet, tokenASymbol, tokenBSymbol, and txHash are all required', 400);
+        // The creator picks only their own token (side A); the joiner picks
+        // side B at join time (app/api/duels/[id]/join/route.ts). tokenBSymbol
+        // is still accepted from an older cached frontend that proposes a pair.
+        if (!creatorWallet || !tokenASymbol || !txHash) {
+            return failure('creatorWallet, tokenASymbol, and txHash are all required', 400);
         }
-        if (tokenASymbol === tokenBSymbol) {
+        if (tokenBSymbol && tokenASymbol === tokenBSymbol) {
             return failure('tokens must be different', 400);
         }
 
@@ -63,11 +67,15 @@ export async function POST(req: NextRequest) {
         const created = await verifyDuelCreated(txHash, creatorWallet);
         const receiptEvent = created.event;
         const escrowAddress = created.escrowAddress;
-        if (receiptEvent.tokenASymbol !== tokenASymbol || receiptEvent.tokenBSymbol !== tokenBSymbol) {
+        if (receiptEvent.tokenASymbol !== tokenASymbol || receiptEvent.tokenBSymbol !== (tokenBSymbol ?? '')) {
             return failure('Token pair does not match the on-chain transaction.', 400);
         }
         const buyInUsd = Number(formatUnits(receiptEvent.buyIn, await readStakeTokenDecimals()));
         const creatorSide = receiptEvent.creatorSide as 0 | 1;
+        // With no opposing token, the creator's token must be the one they're on.
+        if (!tokenBSymbol && creatorSide !== 0) {
+            return failure('A single-token duel must be created on side A.', 400);
+        }
         const durationSeconds = Number(receiptEvent.durationSeconds);
 
         const existing = await Duel.findOne({ escrowAddress });
@@ -81,10 +89,10 @@ export async function POST(req: NextRequest) {
         // and lib/duelGuards.ts for the "why" on this whole flow).
         const [tokenA, tokenB] = await Promise.all([
             resolveDuelToken(tokenASymbol, tokenASnapshot),
-            resolveDuelToken(tokenBSymbol, tokenBSnapshot),
+            tokenBSymbol ? resolveDuelToken(tokenBSymbol, tokenBSnapshot) : null,
         ]);
-        if (!tokenA || !tokenB) {
-            return failure('both tokens must be from today\'s Top 10', 400);
+        if (!tokenA || (tokenBSymbol && !tokenB)) {
+            return failure('tokens must be from today\'s Top 10', 400);
         }
 
         // Reuses the tested matchmaking state machine purely to validate the
@@ -94,7 +102,7 @@ export async function POST(req: NextRequest) {
             id: 'pending',
             creator: creatorWallet,
             tokenASymbol,
-            tokenBSymbol,
+            tokenBSymbol: tokenBSymbol ?? '',
             creatorSide,
             durationSeconds,
             nowSec: Math.floor(Date.now() / 1000),
@@ -114,15 +122,17 @@ export async function POST(req: NextRequest) {
                 currentMarketCapUsd: tokenA.marketCapUsd,
                 sustainedPeakMarketCapUsd: tokenA.marketCapUsd,
             },
-            tokenB: {
-                symbol: tokenB.symbol,
-                name: tokenB.name,
-                tokenAddress: tokenB.tokenAddress,
-                totalSupply: tokenB.totalSupply,
-                startMarketCapUsd: tokenB.marketCapUsd,
-                currentMarketCapUsd: tokenB.marketCapUsd,
-                sustainedPeakMarketCapUsd: tokenB.marketCapUsd,
-            },
+            ...(tokenB && {
+                tokenB: {
+                    symbol: tokenB.symbol,
+                    name: tokenB.name,
+                    tokenAddress: tokenB.tokenAddress,
+                    totalSupply: tokenB.totalSupply,
+                    startMarketCapUsd: tokenB.marketCapUsd,
+                    currentMarketCapUsd: tokenB.marketCapUsd,
+                    sustainedPeakMarketCapUsd: tokenB.marketCapUsd,
+                },
+            }),
             buyInUsd,
             durationSeconds: lobby.durationSeconds,
             createdAt: new Date(lobby.createdAtSec * 1000),
@@ -144,6 +154,9 @@ export async function POST(req: NextRequest) {
             });
         }
         await attributeReferral(creatorWallet, refCode);
+
+        // Refund automatically the moment the lobby's open window closes unjoined.
+        scheduleKeeperTick(duel.openDeadline, `expire-${duel._id}`);
 
         return success(duel, 201);
     } catch (err) {

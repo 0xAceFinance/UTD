@@ -4,8 +4,9 @@ import mongoose from 'mongoose';
 const { getLivePoolSamples } = vi.hoisted(() => ({ getLivePoolSamples: vi.fn() }));
 vi.mock('@/lib/dexScreenerSource', () => ({ getLivePoolSamples }));
 
-const { submitSettlement } = vi.hoisted(() => ({ submitSettlement: vi.fn() }));
-vi.mock('@/lib/settlementRelayer', () => ({ submitSettlement }));
+// The keeper tick runs for real (signing included); with no RELAYER_PRIVATE_KEY
+// it stops before sending anything. Relaying itself is covered in
+// test/unit/settlementRelayer.test.ts.
 
 import { GET as cronRoute } from '@/app/api/cron/settle/route';
 import Duel from '@/lib/models/Duel';
@@ -22,8 +23,8 @@ beforeEach(async () => {
   await clearDatabase();
   vi.clearAllMocks();
   process.env.CRON_SECRET = SECRET;
+  delete process.env.RELAYER_PRIVATE_KEY;
   getLivePoolSamples.mockResolvedValue([]);
-  submitSettlement.mockResolvedValue('settled');
 });
 
 afterAll(async () => {
@@ -64,7 +65,7 @@ describe('GET /api/cron/settle: auth', () => {
 });
 
 describe('GET /api/cron/settle: keeper', () => {
-  it('signs an ended LIVE duel nobody is viewing, then hands it to the relayer', async () => {
+  it('signs an ended LIVE duel nobody is viewing (the relay step reports unconfigured without a relayer key)', async () => {
     const duel = await createDuel({
       status: 'LIVE',
       opponentWallet: '0xcronopp00000000000000000000000000000002',
@@ -79,13 +80,11 @@ describe('GET /api/cron/settle: keeper', () => {
     expect(res.status).toBe(200);
     const json = (await body(res)).data;
     expect(json.signed).toBe(1);
-    expect(json.relayed).toEqual({ settled: 1 });
+    expect(json.unconfigured).toBe(true);
 
     const reloaded = await Duel.findById(duel._id);
     expect(reloaded?.status).toBe('SETTLING');
     expect(reloaded?.oracleSignature).toBeTruthy();
-    expect(submitSettlement).toHaveBeenCalledTimes(1);
-    expect(String(submitSettlement.mock.calls[0][0]._id)).toBe(String(duel._id));
   });
 
   it('leaves LIVE duels that have not ended yet alone', async () => {
@@ -95,28 +94,12 @@ describe('GET /api/cron/settle: keeper', () => {
       startTime: new Date(Date.now() - 60_000),
       endTime: new Date(Date.now() + 600_000),
     });
-    await cronRoute(getReq(URL, auth));
-    expect((await Duel.findById(duel._id))?.status).toBe('LIVE');
-    expect(submitSettlement).not.toHaveBeenCalled();
-  });
-
-  it('retries relaying a SETTLING duel that already has a signature', async () => {
-    const duel = await createDuel({
-      status: 'SETTLING',
-      opponentWallet: '0xcronopp00000000000000000000000000000004',
-      escrowAddress: '0x1000000000000000000000000000000000000057',
-      endTime: new Date(Date.now() - 3_600_000),
-    });
-    duel.winnerSide = 0;
-    duel.oracleSignature = '0xsig';
-    await duel.save();
-    submitSettlement.mockResolvedValue('paused');
-
     const json = (await body(await cronRoute(getReq(URL, auth)))).data;
-    expect(json.relayed).toEqual({ paused: 1 });
+    expect(json.signed).toBe(0);
+    expect((await Duel.findById(duel._id))?.status).toBe('LIVE');
   });
 
-  it('repairs a duel stranded at SETTLING with no signature, then relays it the same run', async () => {
+  it('repairs a duel stranded at SETTLING with no signature', async () => {
     const duel = await createDuel({
       status: 'SETTLING',
       opponentWallet: '0xcronopp00000000000000000000000000000009',
@@ -129,8 +112,6 @@ describe('GET /api/cron/settle: keeper', () => {
 
     const json = (await body(await cronRoute(getReq(URL, auth)))).data;
     expect(json.repaired).toBe(1);
-    // Repaired and relayed in the same pass, not left for the next minute.
-    expect(json.relayed).toEqual({ settled: 1 });
 
     const reloaded = await Duel.findById(duel._id);
     expect(reloaded?.oracleSignature).toBeTruthy();

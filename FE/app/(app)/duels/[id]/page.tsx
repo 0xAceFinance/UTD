@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef } from "react"
+import { useEffect, useMemo, useState, useCallback, useRef } from "react"
 import { useParams } from "next/navigation"
 import {
     AlertDialog,
@@ -17,6 +17,7 @@ import { ShieldCheck, Trophy, Twitter, AlertTriangle, ArrowLeft } from "lucide-r
 import Link from "next/link"
 import { toast } from "sonner"
 import { useWallet } from "@/hooks/useWallet"
+import { useCountdown } from "@/hooks/useCountdown"
 import {
     cancelDuelOnChain,
     expireDuelOnChain,
@@ -28,7 +29,7 @@ import {
 import { SideTag } from "../../components/duel/SideTag"
 import { getFriendlyErrorMessage } from "@/lib/walletErrors"
 
-import { DuelDTO, canForceRefund, formatUsd, pctReturn } from "../../components/duel/types"
+import { DuelDTO, JoinedDuelDTO, canForceRefund, formatUsd, pctReturn, withOpenSlot } from "../../components/duel/types"
 
 import { GmgnLink } from "../../components/duel/GmgnLink"
 import { DuelLiveChart } from "../../components/duel/DuelLiveChart"
@@ -36,7 +37,7 @@ import { SideBySideCharts } from "../../components/duel/DexScreenerChart"
 import { arcadeAudio } from "@/lib/sound/arcadeAudio"
 
 
-function buildShareIntent(duel: DuelDTO, myResult: "won" | "lost" | null): string {
+function buildShareIntent(duel: JoinedDuelDTO, myResult: "won" | "lost" | null): string {
     const winnerSymbol = duel.winnerSide === 0 ? duel.tokenA.symbol : duel.tokenB.symbol
     const loserSymbol = duel.winnerSide === 0 ? duel.tokenB.symbol : duel.tokenA.symbol
     const text =
@@ -49,25 +50,13 @@ function buildShareIntent(duel: DuelDTO, myResult: "won" | "lost" | null): strin
     return `https://x.com/intent/tweet?${new URLSearchParams({ text, url }).toString()}`
 }
 
-function useCountdown(target?: string) {
-    const [remaining, setRemaining] = useState(0)
-    useEffect(() => {
-        if (!target) return
-        const tick = () => setRemaining(Math.max(0, new Date(target).getTime() - Date.now()))
-        tick()
-        const id = setInterval(tick, 1000)
-        return () => clearInterval(id)
-    }, [target])
-    const totalSec = Math.floor(remaining / 1000)
-    const mm = String(Math.floor(totalSec / 60)).padStart(2, "0")
-    const ss = String(totalSec % 60).padStart(2, "0")
-    return { label: `${mm}:${ss}`, totalSec }
-}
-
 export default function DuelDetailPage() {
     const params = useParams<{ id: string }>()
     const { address } = useWallet()
-    const [duel, setDuel] = useState<DuelDTO | null>(null)
+    const [rawDuel, setDuel] = useState<DuelDTO | null>(null)
+    // An OPEN lobby has no side B until the joiner picks it; render a "?" placeholder.
+    const duel = useMemo(() => (rawDuel ? withOpenSlot(rawDuel) : null), [rawDuel])
+    const opponentPicked = Boolean(rawDuel?.tokenB)
     const [cancelling, setCancelling] = useState(false)
     const [reclaiming, setReclaiming] = useState(false)
     const [claiming, setClaiming] = useState(false)
@@ -228,6 +217,20 @@ export default function DuelDetailPage() {
 
     const openCountdown = useCountdown(duel?.status === "OPEN" ? duel.openDeadline : undefined)
     const liveCountdown = useCountdown(duel?.status === "LIVE" ? duel.endTime : undefined)
+    // The keeper pays out / refunds on its own within seconds of the deadline
+    // (lib/settlementRelayer.ts). The manual buttons only appear if it hasn't
+    // landed after this long -- a fallback, not the normal path.
+    const AUTO_GRACE_MS = 2 * 60_000
+    const autoDeadline =
+        duel?.status === "OPEN"
+            ? duel.openDeadline
+            : duel?.status === "SETTLING"
+              ? duel.endTime
+              : undefined
+    const manualFallbackCountdown = useCountdown(
+        autoDeadline ? new Date(new Date(autoDeadline).getTime() + AUTO_GRACE_MS).toISOString() : undefined
+    )
+    const showManualFallback = Boolean(autoDeadline) && manualFallbackCountdown.totalSec <= 0
 
     if (!duel) {
         return (
@@ -261,17 +264,27 @@ export default function DuelDetailPage() {
                         <SideTag side="B" label={duel.tokenB.symbol} />
                     </div>
 
-                    {/* Check both tokens (GMGN + DexScreener chart) before taking the open slot. */}
-                    <div className="mt-4 grid grid-cols-2 gap-2">
+                    {!opponentPicked && (
+                        <p className="mt-3 utd-body text-xs text-[var(--dim)]">
+                            The opponent picks their token when they join.
+                        </p>
+                    )}
+
+                    {/* Check the token(s) (GMGN + DexScreener chart) before taking the open slot. */}
+                    <div className={`mt-4 grid gap-2 ${opponentPicked ? "grid-cols-2" : "grid-cols-1"}`}>
                         <GmgnLink tokenAddress={duel.tokenA.tokenAddress} symbol={duel.tokenA.symbol} label={`${duel.tokenA.symbol} on GMGN`} className="h-10" />
-                        <GmgnLink tokenAddress={duel.tokenB.tokenAddress} symbol={duel.tokenB.symbol} label={`${duel.tokenB.symbol} on GMGN`} className="h-10" />
+                        {opponentPicked && (
+                            <GmgnLink tokenAddress={duel.tokenB.tokenAddress} symbol={duel.tokenB.symbol} label={`${duel.tokenB.symbol} on GMGN`} className="h-10" />
+                        )}
                     </div>
 
                     <SideBySideCharts
                         className="mt-4 text-left"
                         sides={[
                             { side: "A", symbol: duel.tokenA.symbol, tokenAddress: duel.tokenA.tokenAddress },
-                            { side: "B", symbol: duel.tokenB.symbol, tokenAddress: duel.tokenB.tokenAddress },
+                            ...(opponentPicked
+                                ? [{ side: "B" as const, symbol: duel.tokenB.symbol, tokenAddress: duel.tokenB.tokenAddress }]
+                                : []),
                         ]}
                     />
 
@@ -303,14 +316,23 @@ export default function DuelDetailPage() {
                     </div>
 
                     <div className="mt-8 flex justify-center gap-3">
-                        {deadlinePassed ? (
-                            <button
-                                disabled={reclaiming}
-                                onClick={handleReclaim}
-                                className="utd-btn text-[9px] py-2.5 px-6"
-                            >
-                                {reclaiming ? "RECLAIMING…" : "RECLAIM STAKE"}
-                            </button>
+                        {deadlinePassed && !showManualFallback ? (
+                            <span className="inline-block font-mono text-[11px] text-[var(--acid)] border border-[var(--line)] bg-[var(--s0)] px-3 py-2 uppercase">
+                                Refunding the stake automatically…
+                            </span>
+                        ) : deadlinePassed ? (
+                            <div className="space-y-2">
+                                <p className="utd-body text-xs text-[var(--dim)]">
+                                    The automatic refund is taking longer than usual. You can reclaim the stake yourself.
+                                </p>
+                                <button
+                                    disabled={reclaiming}
+                                    onClick={handleReclaim}
+                                    className="utd-btn text-[9px] py-2.5 px-6"
+                                >
+                                    {reclaiming ? "RECLAIMING…" : "RECLAIM STAKE"}
+                                </button>
+                            </div>
                         ) : isCreator ? (
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
@@ -449,19 +471,30 @@ export default function DuelDetailPage() {
                     {isWinner ? (
                         <>
                             <p className="utd-pixel text-xs text-[var(--acid)]">
-                                YOU WON! CLAIM YOUR WINNINGS
+                                YOU WON!
                             </p>
                             <p className="utd-body text-xs text-[var(--dim)] max-w-md mx-auto">
-                                Oracle signature verified. As the winner, trigger on-chain settlement to receive your 90% pot payout (${(duel.buyInUsd * 2 * 0.9).toFixed(0)} USD).
+                                Your ${(duel.buyInUsd * 2 * 0.9).toFixed(0)} payout is being sent to your wallet automatically. Nothing to claim.
                             </p>
                             <div className="pt-1">
-                                <button
-                                    disabled={claiming}
-                                    onClick={handleClaimSettlement}
-                                    className="utd-btn py-2.5 px-8 text-[11px]"
-                                >
-                                    {claiming ? "CLAIMING ON-CHAIN…" : "CLAIM WINNINGS →"}
-                                </button>
+                                {showManualFallback ? (
+                                    <div className="space-y-2">
+                                        <p className="utd-body text-xs text-[var(--dim)]">
+                                            The automatic payout is taking longer than usual. You can send it yourself.
+                                        </p>
+                                        <button
+                                            disabled={claiming}
+                                            onClick={handleClaimSettlement}
+                                            className="utd-btn py-2.5 px-8 text-[11px]"
+                                        >
+                                            {claiming ? "CLAIMING ON-CHAIN…" : "CLAIM WINNINGS →"}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <span className="inline-block font-mono text-[10px] text-[var(--acid)] border border-[var(--line)] bg-[var(--s0)] px-3 py-1.5 uppercase">
+                                        Paying out…
+                                    </span>
+                                )}
                             </div>
                         </>
                     ) : isLoser ? (
@@ -470,22 +503,22 @@ export default function DuelDetailPage() {
                                 YOU LOST THIS DUEL
                             </p>
                             <p className="utd-body text-xs text-[var(--dim)] max-w-md mx-auto">
-                                Only the winner ({winnerWallet ? `${winnerWallet.slice(0, 6)}…${winnerWallet.slice(-4)}` : "winning wallet"}) can settle the match and claim the pot.
+                                The pot is being paid to the winner ({winnerWallet ? `${winnerWallet.slice(0, 6)}…${winnerWallet.slice(-4)}` : "winning wallet"}) automatically.
                             </p>
                             <div className="pt-1">
                                 <span className="inline-block font-mono text-[10px] text-[var(--faint)] border border-[var(--line)] bg-[var(--s0)] px-3 py-1.5 uppercase">
-                                    Awaiting Winner Settlement
+                                    Paying out…
                                 </span>
                             </div>
                         </>
                     ) : (
                         <>
                             <p className="utd-body text-xs text-[var(--dim)] max-w-md mx-auto">
-                                Oracle signature verified. Only the winner ({winnerWallet ? `${winnerWallet.slice(0, 6)}…${winnerWallet.slice(-4)}` : "winning wallet"}) can settle the match and claim the pot.
+                                Oracle signature verified. The pot is being paid to the winner ({winnerWallet ? `${winnerWallet.slice(0, 6)}…${winnerWallet.slice(-4)}` : "winning wallet"}) automatically.
                             </p>
                             <div className="pt-1">
                                 <span className="inline-block font-mono text-[10px] text-[var(--dim)] border border-[var(--line)] bg-[var(--s0)] px-3 py-1.5 uppercase">
-                                    {address ? "Awaiting Winner Settlement" : "Connect Winner Wallet to Settle"}
+                                    Paying out…
                                 </span>
                             </div>
                         </>

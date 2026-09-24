@@ -1,9 +1,10 @@
+import { NextRequest } from 'next/server';
 import { Types } from 'mongoose';
 import { priceSample, liquidityWeightedMedianPrice } from '@mcapduel/engine';
 import { submitJoin, confirmLive, expire } from '@mcapduel/matchmaking';
 import { isAllowedJurisdiction } from '@mcapduel/risk';
 import { connectToDatabase } from '@/lib/mongoose';
-import Duel from '@/lib/models/Duel';
+import Duel, { requireTokenB } from '@/lib/models/Duel';
 import WalletSighting from '@/lib/models/WalletSighting';
 import { getLivePoolSamples } from '@/lib/dexScreenerSource';
 import { verifyDuelJoined } from '@/lib/chainVerify';
@@ -12,8 +13,37 @@ import { getClientIp, getClientCountry } from '@/lib/requestSignals';
 import { getFundingSource } from '@/lib/fundingSource';
 import { BLOCKED_COUNTRY_CODES } from '@/lib/riskConfig';
 import { attributeReferral } from '@/lib/referralAttribution';
-import { resolveDuelToken } from '@/lib/resolveDuelToken';
+import { validateOpponentToken } from '@/lib/resolveDuelToken';
+import { scheduleKeeperTick } from '@/lib/keeperSchedule';
 import { success, failure } from '@/utils/response';
+
+/**
+ * Checked by the join dialog before it prompts the wallet to sign joinDuel(),
+ * so a bad token pick (missing, the creator's own token, not in today's Top
+ * 10) or a lobby that's already closed fails here -- before any stake is
+ * locked on-chain -- instead of after, when the POST below would reject it
+ * with the escrow already Active. The POST re-runs the same checks.
+ */
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+    try {
+        const { id } = await params;
+        if (!Types.ObjectId.isValid(id)) return failure('invalid duel id', 400);
+        const opponentTokenSymbol = req.nextUrl.searchParams.get('opponentTokenSymbol') ?? undefined;
+
+        await connectToDatabase();
+        const duel = await Duel.findById(id);
+        if (!duel) return failure('duel not found', 404);
+        if (duel.status !== 'OPEN' || Date.now() > duel.openDeadline.getTime()) {
+            return failure('This lobby is no longer open.', 409);
+        }
+
+        const pick = await validateOpponentToken(duel, opponentTokenSymbol);
+        if (!pick.ok) return failure(pick.error, 400);
+        return success({ canJoin: true });
+    } catch (err) {
+        return failure((err as Error).message);
+    }
+}
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -27,28 +57,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         const duel = await Duel.findById(id);
         if (!duel) return failure('duel not found', 404);
 
-        // The joiner may swap the creator's proposed opposing token for a
-        // different one instead of being forced into it -- resolve and
-        // validate it the same way the creator's own pair is validated at
-        // creation (app/api/duels/route.ts), then overwrite the opponent's
-        // slot *before* the price-baseline loop below so the oracle pipeline
-        // starts tracking the newly-chosen token from duel start.
-        if (opponentTokenSymbol) {
-            const opponentSlot = duel.creatorSide === 0 ? 'tokenB' : 'tokenA';
-            const creatorTokenSymbol = duel[opponentSlot === 'tokenB' ? 'tokenA' : 'tokenB'].symbol;
-            if (opponentTokenSymbol === creatorTokenSymbol) {
-                return failure('tokens must be different', 400);
-            }
-            if (opponentTokenSymbol !== duel[opponentSlot].symbol) {
-                const resolved = await resolveDuelToken(opponentTokenSymbol, opponentTokenSnapshot);
-                if (!resolved) return failure('token must be from today\'s Top 10', 400);
-
-                duel.originalOpponentTokenSymbol = duel[opponentSlot].symbol;
-                duel[opponentSlot].symbol = resolved.symbol;
-                duel[opponentSlot].name = resolved.name;
-                duel[opponentSlot].tokenAddress = resolved.tokenAddress;
-                duel[opponentSlot].totalSupply = resolved.totalSupply;
-            }
+        // The joiner picks side B's token here (new lobbies have none until
+        // now), or -- on a legacy lobby with a proposed opposing token -- may
+        // keep or swap it. Validated exactly like the precheck (GET above) and
+        // written *before* the price-baseline loop so the oracle pipeline
+        // tracks the chosen token from duel start.
+        const pick = await validateOpponentToken(duel, opponentTokenSymbol, opponentTokenSnapshot);
+        if (!pick.ok) return failure(pick.error, 400);
+        if (pick.token) {
+            const previous = duel[pick.slot];
+            if (previous) duel.originalOpponentTokenSymbol = previous.symbol;
+            duel[pick.slot] = {
+                symbol: pick.token.symbol,
+                name: pick.token.name,
+                tokenAddress: pick.token.tokenAddress,
+                totalSupply: pick.token.totalSupply,
+                rawSamples: [],
+                startMarketCapUsd: pick.token.marketCapUsd,
+                currentMarketCapUsd: pick.token.marketCapUsd,
+                sustainedPeakMarketCapUsd: pick.token.marketCapUsd,
+            };
         }
 
         // Geofence (@mcapduel/risk, Section 08) -- see app/api/duels/route.ts
@@ -97,7 +125,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         // validate against from the first tick. Falls back to the creation-time
         // snapshot if a side has no tokenAddress/totalSupply yet (a Duel created
         // before those fields existed) or the live read comes back empty.
-        for (const side of [duel.tokenA, duel.tokenB] as const) {
+        for (const side of [duel.tokenA, requireTokenB(duel)]) {
             if (!side.tokenAddress || !side.totalSupply) continue;
             const samples = await getLivePoolSamples(side.tokenAddress).catch(() => []);
             if (samples.length === 0) continue;
@@ -129,6 +157,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             });
         }
         await attributeReferral(opponent, refCode);
+
+        // Sign and pay out automatically the moment the duel's timer ends.
+        if (duel.escrowAddress && duel.endTime) scheduleKeeperTick(duel.endTime, `settle-${duel._id}`);
 
         return success(duel);
     } catch (err) {

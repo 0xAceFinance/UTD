@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react"
 import { Activity } from "lucide-react"
-import { DuelDTO, formatUsd, pctReturn } from "./types"
+import { JoinedDuelDTO, formatUsd, pctReturn } from "./types"
 import { DexScreenerChart } from "./DexScreenerChart"
 import { arcadeAudio } from "@/lib/sound/arcadeAudio"
 
@@ -29,7 +29,7 @@ export function DuelLiveChart({
     duel,
     className = "",
 }: {
-    duel: DuelDTO
+    duel: JoinedDuelDTO
     className?: string
 }) {
     const [activeTab, setActiveTab] = useState<"headToHead" | "tokenA" | "tokenB">("headToHead")

@@ -23,9 +23,9 @@ export default function CreateDuelPage() {
 
     const [tokens, setTokens] = useState<DuelTokenDTO[]>([])
     const [tokensLoading, setTokensLoading] = useState(true)
+    // The creator picks only their own token (always side A); the joiner picks
+    // side B when they join (app/api/duels/[id]/join/route.ts).
     const [tokenA, setTokenA] = useState<string | null>(null)
-    const [tokenB, setTokenB] = useState<string | null>(null)
-    const [side, setSide] = useState<0 | 1>(0)
     const [buyIn, setBuyIn] = useState(100)
     const [duration, setDuration] = useState(10)
     const [submitting, setSubmitting] = useState(false)
@@ -51,35 +51,24 @@ export default function CreateDuelPage() {
 
         load()
         // Re-prices server-side every ~20s; poll so the picker's ranks/#s stay
-        // current without disturbing tokenA/tokenB (keyed by symbol, not index).
+        // current without disturbing the pick (keyed by symbol, not index).
         const id = setInterval(load, 20_000)
         return () => clearInterval(id)
     }, [])
 
     function pickToken(symbol: string) {
-        if (tokenA === symbol) {
-            setTokenA(null)
-            return
-        }
-        if (tokenB === symbol) {
-            setTokenB(null)
-            return
-        }
-        if (!tokenA) setTokenA(symbol)
-        else if (!tokenB) setTokenB(symbol)
-        else toast.info("Deselect a token first to swap it out.")
+        setTokenA((current) => (current === symbol ? null : symbol))
     }
 
-    const bothPicked = Boolean(tokenA && tokenB)
     const paused = factory?.paused ?? false
     const belowMin = factory !== null && buyIn < factory.minBuyInUsd
     const aboveMax = factory !== null && factory.maxBuyInUsd !== null && buyIn > factory.maxBuyInUsd
-    const canSubmit = connected && bothPicked && buyIn > 0 && !belowMin && !aboveMax && !paused && factory !== null && !submitting
+    const canSubmit = connected && Boolean(tokenA) && buyIn > 0 && !belowMin && !aboveMax && !paused && factory !== null && !submitting
     const pot = buyIn * 2
     const winAmount = Math.round(pot * 0.9)
 
     async function handleSubmit() {
-        if (!address || !tokenA || !tokenB) return
+        if (!address || !tokenA) return
         setSubmitting(true)
         try {
             const precheck = await fetch(`/api/duels/precheck?wallet=${address}`).then((r) => r.json())
@@ -93,31 +82,29 @@ export default function CreateDuelPage() {
             const txHash = await createDuelOnChain({
                 creator: address as `0x${string}`,
                 buyInUsd: buyIn,
-                creatorSide: side,
+                creatorSide: 0,
                 durationSeconds: duration * 60,
                 tokenASymbol: tokenA,
-                tokenBSymbol: tokenB,
+                // Left blank on-chain: the joiner picks side B at join time.
+                tokenBSymbol: "",
             })
 
             setStage("saving")
-            // Snapshot the exact token data the picker showed for this pair --
-            // the on-chain tx above already locked funds against tokenA/tokenB
-            // as strings, so registration below must not depend on the Top 10
+            // Snapshot the exact token data the picker showed -- the on-chain
+            // tx above already locked funds against tokenA as a string, so
+            // registration below must not depend on the Top 10
             // list still looking the same by the time this request lands (a
             // scan can rotate it out from under an in-flight tx). See
             // app/api/duels/route.ts for how this snapshot is used as a
             // fallback when the live lookup misses.
             const tokenASnapshot = tokens.find((t) => t.symbol === tokenA)
-            const tokenBSnapshot = tokens.find((t) => t.symbol === tokenB)
             const res = await fetch("/api/duels", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     creatorWallet: address,
                     tokenASymbol: tokenA,
-                    tokenBSymbol: tokenB,
                     tokenASnapshot,
-                    tokenBSnapshot,
                     txHash,
                     refCode: getStoredRef(),
                 }),
@@ -143,15 +130,15 @@ export default function CreateDuelPage() {
             {/* The top bar already says NEW DUEL; this is just the one-line brief. */}
             {paused && <PausedBanner />}
             <p className="text-[14px] text-[var(--dim)]">
-                Pick two tokens, set a stake and a round length. It goes live once someone accepts.
+                Pick your token, set a stake and a round length. Your opponent picks theirs when they join, and it goes live.
             </p>
 
             {/* Step 1: Pick Tokens */}
             <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                    <h2 className="app-section-label">1 · Tokens</h2>
+                    <h2 className="app-section-label">1 · Your token</h2>
                     <span className="font-mono text-xs text-[var(--faint)]">
-                        {tokenA && tokenB ? "Both selected" : tokenA ? "Select 1 more" : "Select 2"}
+                        {tokenA ? "Selected" : "Select 1"}
                     </span>
                 </div>
 
@@ -165,7 +152,6 @@ export default function CreateDuelPage() {
                     <div className="grid grid-cols-2 sm:grid-cols-5 gap-px bg-[var(--line)]">
                         {tokens.map((t) => {
                             const isA = tokenA === t.symbol
-                            const isB = tokenB === t.symbol
 
                             return (
                                 <button
@@ -174,9 +160,7 @@ export default function CreateDuelPage() {
                                     className={`p-3 text-left transition-colors ${
                                         isA
                                             ? "bg-[var(--s2)] ring-1 ring-inset ring-[var(--hot)]"
-                                            : isB
-                                              ? "bg-[var(--s2)] ring-1 ring-inset ring-[var(--cool)]"
-                                              : "bg-[var(--s1)] hover:bg-[var(--s2)]"
+                                            : "bg-[var(--s1)] hover:bg-[var(--s2)]"
                                     }`}
                                 >
                                     <div className="flex items-center gap-2">
@@ -187,9 +171,8 @@ export default function CreateDuelPage() {
                                         {t.name}
                                     </div>
                                     <div className="mt-2 font-mono text-[10px]">
-                                        {isA && <span className="text-[var(--hot)] font-semibold">Side A</span>}
-                                        {isB && <span className="text-[var(--cool)] font-semibold">Side B</span>}
-                                        {!isA && !isB &&
+                                        {isA && <span className="text-[var(--hot)] font-semibold">Your pick</span>}
+                                        {!isA &&
                                             (t.pinned ? (
                                                 <span className="text-[var(--acid)]">★ Featured</span>
                                             ) : (
@@ -203,52 +186,14 @@ export default function CreateDuelPage() {
                 )}
             </div>
 
-            {/* The picked tokens' charts head to head, before committing a stake. */}
+            {/* The picked token's chart, before committing a stake. */}
             <SideBySideCharts
-                sides={[
-                    { side: "A", symbol: tokenA ?? undefined, tokenAddress: tokens.find((t) => t.symbol === tokenA)?.tokenAddress },
-                    { side: "B", symbol: tokenB ?? undefined, tokenAddress: tokens.find((t) => t.symbol === tokenB)?.tokenAddress },
-                ]}
+                sides={[{ side: "A", symbol: tokenA ?? undefined, tokenAddress: tokens.find((t) => t.symbol === tokenA)?.tokenAddress }]}
             />
 
-            {/* Step 2: Choose Side */}
+            {/* Step 2: Stake */}
             <div className="space-y-3">
-                <h2 className="app-section-label">2 · Your side</h2>
-
-                <div className="grid grid-cols-2 gap-2 sm:gap-4">
-                    <button
-                        disabled={!tokenA}
-                        onClick={() => setSide(0)}
-                        className={`p-4 sm:p-5 text-left border transition-all ${
-                            side === 0 && tokenA
-                                ? "border-[var(--hot)] bg-[var(--s1)]"
-                                : "border-[var(--line)] bg-[var(--s1)] opacity-70 hover:opacity-100"
-                        }`}
-                    >
-                        <div className="font-mono text-xs text-[var(--hot)]">SIDE A</div>
-                        <div className="utd-pixel text-lg text-white mt-2">{tokenA ?? "—"}</div>
-                        <div className="utd-body text-xs text-[var(--faint)] mt-1">You win if Token A climbs higher</div>
-                    </button>
-
-                    <button
-                        disabled={!tokenB}
-                        onClick={() => setSide(1)}
-                        className={`p-4 sm:p-5 text-left border transition-all ${
-                            side === 1 && tokenB
-                                ? "border-[var(--cool)] bg-[var(--s1)]"
-                                : "border-[var(--line)] bg-[var(--s1)] opacity-70 hover:opacity-100"
-                        }`}
-                    >
-                        <div className="font-mono text-xs text-[var(--cool)]">SIDE B</div>
-                        <div className="utd-pixel text-lg text-white mt-2">{tokenB ?? "—"}</div>
-                        <div className="utd-body text-xs text-[var(--faint)] mt-1">You win if Token B climbs higher</div>
-                    </button>
-                </div>
-            </div>
-
-            {/* Step 3: Stake */}
-            <div className="space-y-3">
-                <h2 className="app-section-label">3 · Stake</h2>
+                <h2 className="app-section-label">2 · Stake</h2>
 
                 <div className="flex flex-wrap items-center gap-3">
                     <div className="relative">
@@ -290,10 +235,10 @@ export default function CreateDuelPage() {
                 )}
             </div>
 
-            {/* Step 4: Duration */}
+            {/* Step 3: Duration */}
             <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                    <h2 className="app-section-label">4 · Round length</h2>
+                    <h2 className="app-section-label">3 · Round length</h2>
                     <span className="font-mono text-sm text-[var(--acid)]">{duration} min</span>
                 </div>
 

@@ -136,28 +136,29 @@ never depends on a player clicking a button in time.
    rug-check, LP-lock, holder concentration, blocklist) and writes today's `DuelToken`
    Top 10. Scheduled continuously (see [Background jobs](#background-jobs)); a stale
    or failing scan trips a circuit breaker that pauses new duel creation.
-2. **Create.** The creator picks two Top-10 tokens and a side, then signs
-   `BattleEscrowFactory.createDuel(...)` directly from their wallet. The factory
-   clones the audited `BattleEscrow` implementation (EIP-1167 minimal proxy), pulls
-   the creator's stake straight into the new clone, and opens a 5-minute matchmaking
-   window. The frontend then calls `POST /api/duels` with the tx hash; the route
-   **re-derives** every term from the real `DuelCreated` event
-   (`lib/chainVerify.ts::verifyDuelCreated`) rather than trusting the client, records
-   the wallet+IP (`WalletSighting`, feeds sybil detection later), and best-effort
+2. **Create.** The creator picks **one** Top-10 token (their side, always side A), then
+   signs `BattleEscrowFactory.createDuel(...)` directly from their wallet with
+   `creatorSide = 0` and an empty `tokenBSymbol` (the contract only stores the symbols
+   for display; nothing on-chain reads them). The factory clones the audited
+   `BattleEscrow` implementation (EIP-1167 minimal proxy), pulls the creator's stake
+   straight into the new clone, and opens a 5-minute matchmaking window. The frontend
+   then calls `POST /api/duels` with the tx hash; the route **re-derives** every term
+   from the real `DuelCreated` event (`lib/chainVerify.ts::verifyDuelCreated`) rather
+   than trusting the client, stores the `Duel` with no `tokenB` yet, records the
+   wallet+IP (`WalletSighting`, feeds sybil detection later), and best-effort
    attributes any pending referral code (`lib/referralAttribution.ts`).
-3. **Join.** The opponent isn't locked into the creator's proposed pair: the join UI
-   shows the creator's token (fixed) plus the creator's proposed opposing token,
-   pre-selected but swappable for any other token in today's Top 10. Accepting the
-   default or picking a different one, the opponent signs `joinDuel()` (the on-chain
-   call itself is unchanged — token choice is resolved off-chain only); `POST
-   /api/duels/[id]/join` verifies the real `DuelJoined` event, validates and applies
-   any token swap (`lib/resolveDuelToken.ts`, same Top-10/must-differ rules as
-   creation), snapshots a fresh live market-cap read for both sides (the real starting
-   line, not the scan-time snapshot), and flips the `Duel` document straight to
-   `LIVE`. If the opponent swapped tokens, the original proposal is kept on
-   `Duel.originalOpponentTokenSymbol` for support/audit — the on-chain `DuelCreated`
-   event's symbols are immutable and will keep showing the creator's original
-   proposal, which no on-chain logic (including `settle()`) ever reads again.
+3. **Join.** The opponent **must** pick side B's token from today's Top 10, and can never
+   pick the creator's token (matched by symbol *or* token address, since two tokens can
+   share a ticker). The join dialog first calls `GET /api/duels/[id]/join?opponentTokenSymbol=…`,
+   which checks the pick and that the lobby is still open **before** the wallet signs, so a
+   bad pick can't leave an escrow Active on-chain with the DB still OPEN. The opponent
+   then signs `joinDuel()` (the on-chain call is unchanged; the token choice is resolved
+   off-chain only). `POST /api/duels/[id]/join` verifies the real `DuelJoined` event,
+   re-runs the same validation (`lib/resolveDuelToken.ts::validateOpponentToken`), fills
+   side B, snapshots a fresh live market-cap read for both sides (the real starting line),
+   and flips the `Duel` to `LIVE`. Lobbies created before this change still carry a
+   proposed side-B token. The joiner may keep it or swap it, and a swap keeps the original
+   on `Duel.originalOpponentTokenSymbol` for support/audit.
 4. **Live.** While `LIVE`, the frontend polls `GET /api/duels/[id]` every ~3s. Each
    poll re-runs `@mcapduel/engine`'s oracle pipeline (liquidity-weighted median across
    pools → liquidity-depth gate → 60s TWAP → sustained-peak dwell validation →

@@ -44,7 +44,7 @@ vi.mock('@/lib/chainClient', async (importOriginal) => {
   const { privateKeyToAccount } = await import('viem/accounts');
   return {
     ...actual,
-    publicClient: { simulateContract: vi.fn(), waitForTransactionReceipt: vi.fn() },
+    publicClient: { simulateContract: vi.fn(), waitForTransactionReceipt: vi.fn(), getBalance: vi.fn(async () => 0n), readContract: vi.fn() },
     readEscrowStatus: vi.fn(async () => actual.EscrowStatus.Active),
     readEscrowWinnerSide: vi.fn(),
     readSettlementSigner: vi.fn(async () => privateKeyToAccount(process.env.ORACLE_SIGNER_PRIVATE_KEY as `0x${string}`).address),

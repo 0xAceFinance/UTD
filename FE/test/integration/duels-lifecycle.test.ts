@@ -22,7 +22,7 @@ vi.mock('@/lib/fundingSource', () => ({ getFundingSource }));
 
 import { POST as createDuelRoute } from '@/app/api/duels/route';
 import { GET as getDuelRoute } from '@/app/api/duels/[id]/route';
-import { POST as joinDuelRoute } from '@/app/api/duels/[id]/join/route';
+import { GET as joinPrecheckRoute, POST as joinDuelRoute } from '@/app/api/duels/[id]/join/route';
 import { POST as cancelDuelRoute } from '@/app/api/duels/[id]/cancel/route';
 import { POST as expireDuelRoute } from '@/app/api/duels/[id]/expire/route';
 import { POST as confirmSettlementRoute } from '@/app/api/duels/[id]/confirm-settlement/route';
@@ -133,6 +133,119 @@ describe('create: open deadline', () => {
     const duel = await createOnChainDuel();
     expect(new Date(duel.openDeadline).getTime()).toBe(onChain.getTime());
     expect(readEscrowOpenDeadline).toHaveBeenCalledWith(ESCROW);
+  });
+});
+
+describe('single-token lobbies: creator picks side A, joiner picks side B', () => {
+  async function createSingleTokenDuel() {
+    const { tokenA } = await setupTop10(); // FOO (creator's) + BAR (available to the joiner)
+    mockCreatedEvent({ tokenBSymbol: '' });
+    const res = await createDuelRoute(
+      postJson('http://localhost/api/duels', { creatorWallet: CREATOR, tokenASymbol: tokenA.symbol, txHash: '0x' + 'aa'.repeat(32) })
+    );
+    expect(res.status).toBe(201);
+    return { duel: (await body(res)).data, fooAddress: tokenA.tokenAddress };
+  }
+
+  function join(duelId: string, extra: Record<string, unknown>) {
+    chainVerifyMocks.verifyDuelJoined.mockResolvedValue(undefined);
+    getLivePoolSamples.mockImplementation(async (addr: string) => samplesFor(addr));
+    return joinDuelRoute(
+      postJson(`http://localhost/api/duels/${duelId}/join`, { opponentWallet: OPPONENT, txHash: '0x' + 'bb'.repeat(32), ...extra }, { 'x-forwarded-for': OPPONENT_IP }),
+      { params: Promise.resolve({ id: duelId }) }
+    );
+  }
+
+  function precheck(duelId: string, opponentTokenSymbol?: string) {
+    const qs = opponentTokenSymbol ? `?opponentTokenSymbol=${opponentTokenSymbol}` : '';
+    return joinPrecheckRoute(getReq(`http://localhost/api/duels/${duelId}/join${qs}`), { params: Promise.resolve({ id: duelId }) });
+  }
+
+  it('creates an OPEN lobby with only the creator\'s token and no side B', async () => {
+    const { duel } = await createSingleTokenDuel();
+    expect(duel.status).toBe('OPEN');
+    expect(duel.creatorSide).toBe(0);
+    expect(duel.tokenA.symbol).toBe('FOO');
+    expect(duel.tokenB).toBeUndefined();
+  });
+
+  it('rejects a single-token create whose on-chain creatorSide is B', async () => {
+    const { tokenA } = await setupTop10();
+    mockCreatedEvent({ tokenBSymbol: '', creatorSide: 1 });
+    const res = await createDuelRoute(
+      postJson('http://localhost/api/duels', { creatorWallet: CREATOR, tokenASymbol: tokenA.symbol, txHash: '0x' + 'aa'.repeat(32) })
+    );
+    expect(res.status).toBe(400);
+    expect(await Duel.countDocuments()).toBe(0);
+  });
+
+  it('rejects a single-token create when the on-chain event carries a side B symbol', async () => {
+    const { tokenA } = await setupTop10();
+    mockCreatedEvent(); // tokenBSymbol 'BAR' on-chain, none in the request
+    const res = await createDuelRoute(
+      postJson('http://localhost/api/duels', { creatorWallet: CREATOR, tokenASymbol: tokenA.symbol, txHash: '0x' + 'aa'.repeat(32) })
+    );
+    expect(res.status).toBe(400);
+    expect((await body(res)).error).toMatch(/does not match/);
+  });
+
+  it('join without a token pick is rejected and the lobby stays OPEN', async () => {
+    const { duel } = await createSingleTokenDuel();
+    const res = await join(duel._id, {});
+    expect(res.status).toBe(400);
+    expect((await body(res)).error).toMatch(/Pick your token/);
+    expect((await Duel.findById(duel._id))?.status).toBe('OPEN');
+  });
+
+  it('join with the creator\'s own token is rejected', async () => {
+    const { duel } = await createSingleTokenDuel();
+    const res = await join(duel._id, { opponentTokenSymbol: 'FOO' });
+    expect(res.status).toBe(400);
+    expect((await body(res)).error).toMatch(/same token/);
+    const reloaded = await Duel.findById(duel._id);
+    expect(reloaded?.status).toBe('OPEN');
+    expect(reloaded?.tokenB).toBeFalsy();
+  });
+
+  it('join with a different ticker for the creator\'s token address is rejected', async () => {
+    const { duel, fooAddress } = await createSingleTokenDuel();
+    const res = await join(duel._id, {
+      opponentTokenSymbol: 'FOO2',
+      opponentTokenSnapshot: { symbol: 'FOO2', name: 'Foo again', tokenAddress: fooAddress.toUpperCase(), totalSupply: 1, marketCapUsd: 1 },
+    });
+    expect(res.status).toBe(400);
+    expect((await body(res)).error).toMatch(/same token/);
+  });
+
+  it('join with a different Top 10 token fills side B and goes LIVE', async () => {
+    const { duel } = await createSingleTokenDuel();
+    const res = await join(duel._id, { opponentTokenSymbol: 'BAR' });
+    const joined = (await body(res)).data;
+    expect(res.status).toBe(200);
+    expect(joined.status).toBe('LIVE');
+    expect(joined.tokenA.symbol).toBe('FOO');
+    expect(joined.tokenB.symbol).toBe('BAR');
+    expect(joined.tokenB.startMarketCapUsd).toBeGreaterThan(0);
+    expect(joined.tokenB.rawSamples.length).toBeGreaterThan(0);
+    expect(joined.originalOpponentTokenSymbol).toBeFalsy();
+  });
+
+  it('join precheck validates the pick and the open window before any wallet signs', async () => {
+    const { duel } = await createSingleTokenDuel();
+    expect((await precheck(duel._id)).status).toBe(400);
+    expect((await precheck(duel._id, 'FOO')).status).toBe(400);
+    expect((await precheck(duel._id, 'NOTLISTED')).status).toBe(400);
+    expect((await precheck(duel._id, 'BAR')).status).toBe(200);
+
+    await Duel.updateOne({ _id: duel._id }, { openDeadline: new Date(Date.now() - 1000) });
+    expect((await precheck(duel._id, 'BAR')).status).toBe(409);
+  });
+
+  it('a duel past OPEN cannot be saved without side B', async () => {
+    const { duel } = await createSingleTokenDuel();
+    const doc = await Duel.findById(duel._id);
+    doc!.status = 'LIVE';
+    await expect(doc!.save()).rejects.toThrow(/tokenB is required/);
   });
 });
 
@@ -320,7 +433,7 @@ describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {
       { params: Promise.resolve({ id: duel._id }) }
     );
     expect(res.status).toBe(400);
-    expect((await body(res)).error).toMatch(/must be different/);
+    expect((await body(res)).error).toMatch(/same token/);
     const reloaded = await Duel.findById(duel._id);
     expect(reloaded?.status).toBe('OPEN');
   });
@@ -341,7 +454,7 @@ describe('Full duel lifecycle: create -> join -> live tick -> settle', () => {
     expect((await body(res)).error).toMatch(/Top 10/);
     const reloaded = await Duel.findById(duel._id);
     expect(reloaded?.status).toBe('OPEN');
-    expect(reloaded?.tokenB.symbol).toBe('BAR');
+    expect(reloaded?.tokenB?.symbol).toBe('BAR');
   });
 
   it('cancel before join: creator can cancel an OPEN duel, and the cancellation is recorded for the rate limiter', async () => {

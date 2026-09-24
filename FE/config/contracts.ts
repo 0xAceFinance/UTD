@@ -44,6 +44,28 @@ const KNOWN_DEPLOYMENTS: Record<
     battleEscrowFactory: `0x${string}`;
     stakeToken: `0x${string}`;
     rpcUrl: string;
+    /** Multicall3 -- the keeper batches settle()/expire()/refundStale() for
+     * many escrows into one transaction through it (lib/keeper.ts). */
+    multicall3?: `0x${string}`;
+    /** Gas auto-top-up (lib/relayerTopUp.ts): swaps a little of the platform's
+     * treasury revenue from stakeToken to native ETH for the relayer, on a
+     * Uniswap v3 pool, so no one has to manually send it gas. All four
+     * addresses below, and the pool's fee tier, were read from this chain's
+     * real Uniswap v3 deployment and the real stakeToken/WETH pool, not
+     * assumed -- see Deployment.md's "Automatic relayer gas top-up" section. */
+    gasSwap?: {
+      /** Native-wrapped token the stake token is quoted/swapped against. */
+      weth: `0x${string}`;
+      /** Uniswap V3 SwapRouter02 -- exactInputSingle + unwrapWETH9 via multicall. */
+      swapRouter: `0x${string}`;
+      /** Uniswap V3 QuoterV2 -- read-only quote, used to set the swap's slippage floor. */
+      quoter: `0x${string}`;
+      /** The stakeToken/weth pool's fee tier in hundredths of a bip (e.g. 100 = 0.01%). */
+      poolFeeTier: number;
+      /** Platform treasury (CLAUDE.md) -- source of the USDG the top-up pulls via a
+       * capped, treasury-signed approve() to the relayer. Never the treasury's own key. */
+      treasury: `0x${string}`;
+    };
   }
 > = {
   4663: {
@@ -52,6 +74,19 @@ const KNOWN_DEPLOYMENTS: Record<
     // USDG "Global Dollar" (Paxos), 6 decimals
     stakeToken: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
     rpcUrl: "https://robinhood-mainnet.g.alchemy.com/v2/T_E1VT8027czrtVr41hsQ",
+    // Canonical Multicall3 (same address on every chain it's deployed to);
+    // bytecode confirmed present on chain 4663.
+    multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11",
+    // Confirmed on-chain: SwapRouter02.WETH9() reads this address; the
+    // 0.01%-fee USDG/WETH pool (below) holds ~9.9M USDG / ~3,371 WETH.
+    gasSwap: {
+      weth: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
+      // Uniswap's official Robinhood Chain deployment (developers.uniswap.org).
+      swapRouter: "0xcaf681a66d020601342297493863e78c959e5cb2",
+      quoter: "0x33e885ed0ec9bf04ecfb19341582aadcb4c8a9e7",
+      poolFeeTier: 100,
+      treasury: "0x6d0c0Ac0b60B1BE2D60ad4e6AA868D2612fe4f89",
+    },
   },
 };
 
@@ -66,6 +101,12 @@ export const CONTRACTS = {
   stakeToken: (knownForChain?.stakeToken ||
     process.env.NEXT_PUBLIC_STAKE_TOKEN_ADDRESS ||
     "") as `0x${string}`,
+  multicall3: (knownForChain?.multicall3 || process.env.NEXT_PUBLIC_MULTICALL3_ADDRESS || undefined) as
+    | `0x${string}`
+    | undefined,
+  // Not env-overridable for a listed chain, same reasoning as the rest of this
+  // file -- a wrong swap-path address is a fund-safety issue, not a cosmetic one.
+  gasSwap: knownForChain?.gasSwap,
   rpcUrl:
     knownForChain?.rpcUrl ||
     process.env.NEXT_PUBLIC_RPC_URL ||

@@ -59,7 +59,13 @@ export interface IDuel extends Document {
     opponentWallet?: string;
     creatorSide: 0 | 1;
     tokenA: TokenSide;
-    tokenB: TokenSide;
+    /** The joiner's token. Absent while an OPEN lobby waits for an opponent:
+     * the creator picks only their own token (always side A) and the joiner
+     * picks side B at join time (app/api/duels/[id]/join/route.ts). Always
+     * set once the duel has left OPEN for MATCHED/LIVE/... (enforced by the
+     * pre-validate hook below). Legacy lobbies created with a proposed pair
+     * have it from creation. */
+    tokenB?: TokenSide;
     buyInUsd: number;
     durationSeconds: number;
     createdAt: Date;
@@ -107,7 +113,7 @@ export interface IDuel extends Document {
     creatorReferrerBps?: number;
     opponentReferrerWallet?: string;
     opponentReferrerBps?: number;
-    /** Set only if the opponent swapped the creator's proposed opposing token
+    /** Set only if the opponent swapped a legacy lobby's proposed opposing token
      * at join time -- the on-chain DuelCreated event (immutable) still shows
      * this original symbol, which will now diverge from the opponent's slot
      * on tokenA/tokenB.symbol. Kept for support/audit, never read by any logic. */
@@ -149,7 +155,7 @@ const DuelSchema = new Schema<IDuel>({
     opponentWallet: { type: String, lowercase: true, index: true },
     creatorSide: { type: Number, enum: [0, 1], required: true },
     tokenA: { type: TokenSideSchema, required: true },
-    tokenB: { type: TokenSideSchema, required: true },
+    tokenB: { type: TokenSideSchema },
     buyInUsd: { type: Number, required: true },
     durationSeconds: { type: Number, required: true },
     createdAt: { type: Date, default: Date.now },
@@ -174,5 +180,21 @@ const DuelSchema = new Schema<IDuel>({
     opponentReferrerBps: Number,
     originalOpponentTokenSymbol: String,
 });
+
+/** Lobby states in which the joiner hasn't picked side B's token yet (or never will). */
+const TOKEN_B_OPTIONAL_STATUSES: LobbyStatus[] = ['OPEN', 'EXPIRED', 'CANCELLED'];
+
+DuelSchema.pre('validate', function (next) {
+    if (!this.tokenB && !TOKEN_B_OPTIONAL_STATUSES.includes(this.status)) {
+        this.invalidate('tokenB', `tokenB is required once a duel is ${this.status}`);
+    }
+    next();
+});
+
+/** Narrows a duel known to be past OPEN (MATCHED/LIVE/SETTLING/HELD/SETTLED) to one with both sides set. */
+export function requireTokenB(duel: Pick<IDuel, 'tokenB' | 'status' | '_id'>): TokenSide {
+    if (!duel.tokenB) throw new Error(`duel ${String(duel._id)} (${duel.status}) has no tokenB`);
+    return duel.tokenB;
+}
 
 export default models.Duel || model<IDuel>('Duel', DuelSchema);

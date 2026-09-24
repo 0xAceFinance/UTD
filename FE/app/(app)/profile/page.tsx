@@ -226,14 +226,14 @@ export default function ProfilePage() {
                   const mySide = isCreator ? m.creatorSide : m.creatorSide === 0 ? 1 : 0;
                   const won = m.winnerSide === mySide;
                   const gainA = pctReturn(m.tokenA.startMarketCapUsd, m.tokenA.sustainedPeakMarketCapUsd);
-                  const gainB = pctReturn(m.tokenB.startMarketCapUsd, m.tokenB.sustainedPeakMarketCapUsd);
+                  const gainB = m.tokenB ? pctReturn(m.tokenB.startMarketCapUsd, m.tokenB.sustainedPeakMarketCapUsd) : 0;
 
                   return (
                     <tr key={m._id} className="hover:bg-[var(--s2)]/40 transition-colors">
                       <td className="py-3.5 px-4">
                         <span className="text-white font-semibold">{m.tokenA.symbol}</span>
                         <span className="text-[var(--faint)] mx-1.5">vs</span>
-                        <span className="text-white font-semibold">{m.tokenB.symbol}</span>
+                        <span className="text-white font-semibold">{m.tokenB?.symbol ?? "?"}</span>
                       </td>
                       <td className="py-3.5 px-4">
                         <span className={`utd-pixel text-[8px] px-2 py-0.5 ${

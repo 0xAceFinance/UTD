@@ -47,7 +47,8 @@ export interface DuelDTO {
     opponentWallet?: string
     creatorSide: 0 | 1
     tokenA: DuelTokenSideDTO
-    tokenB: DuelTokenSideDTO
+    /** Absent while an OPEN lobby waits for the joiner to pick side B. */
+    tokenB?: DuelTokenSideDTO
     buyInUsd: number
     durationSeconds: number
     createdAt: string
@@ -93,6 +94,29 @@ export const STALE_REFUND_GRACE_PERIOD_MS = 24 * 60 * 60 * 1000
 export function canForceRefund(duel: Pick<DuelDTO, 'status' | 'endTime'>, nowMs = Date.now()): boolean {
     if (duel.status !== 'LIVE' && duel.status !== 'HELD') return false
     return !!duel.endTime && nowMs - new Date(duel.endTime).getTime() >= STALE_REFUND_GRACE_PERIOD_MS
+}
+
+/** A duel with both sides set -- every duel past OPEN, and legacy lobbies created with a proposed pair. */
+export type JoinedDuelDTO = DuelDTO & { tokenB: DuelTokenSideDTO }
+
+/** Symbol shown for side B while the joiner hasn't picked it. */
+export const OPEN_SLOT_SYMBOL = "?"
+
+/** Fills a missing side B (an OPEN lobby, or one that expired/was cancelled
+ * unjoined) with a "?" placeholder so views can render one shape. Check
+ * `duel.tokenB` on the original DTO to tell a real pick from the placeholder. */
+export function withOpenSlot(duel: DuelDTO): JoinedDuelDTO {
+    if (duel.tokenB) return duel as JoinedDuelDTO
+    return {
+        ...duel,
+        tokenB: {
+            symbol: OPEN_SLOT_SYMBOL,
+            name: "Opponent's pick",
+            startMarketCapUsd: 0,
+            currentMarketCapUsd: 0,
+            sustainedPeakMarketCapUsd: 0,
+        },
+    }
 }
 
 export function formatUsd(n: number): string {

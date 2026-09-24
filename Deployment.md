@@ -268,7 +268,7 @@ proxy entirely. Full description of what each job does: [`README.md`
 § Background jobs](README.md#background-jobs).
 
 ```bash
-# Settle cron (runs every minute to settle ended duels)
+# Settle cron: the per-minute BACKSTOP for the keeper (see "Instant payouts" below)
 gcloud scheduler jobs create http utd-settle-cron \
   --schedule="* * * * *" \
   --uri="<cloud-run-service-url>/api/cron/settle" \
@@ -287,6 +287,84 @@ gcloud scheduler jobs create http utd-scan-cron \
   --attempt-deadline=180s \
   --location=<your-region>
 ```
+
+### Instant payouts and refunds (Cloud Tasks)
+
+The keeper (`lib/settlementRelayer.ts::runKeeperTick`) pays out winners
+(`settle()`), refunds unmatched lobbies (`expire()`) and never-signed duels
+24h after the end (`refundStale()`), batched through Multicall3. Nobody has to
+click Claim/Reclaim. To run it **at the second a duel's deadline passes**
+instead of on the next minute, `POST /api/duels` and `POST /api/duels/[id]/join`
+enqueue a Cloud Task per duel (`lib/keeperSchedule.ts`) that calls
+`POST /api/keeper/tick`. Without these env vars the enqueue is a no-op and the
+cron above still does everything, just up to a minute later.
+
+```bash
+gcloud services enable cloudtasks.googleapis.com
+gcloud tasks queues create utd-keeper --location=<your-region> \
+  --max-attempts=20 --min-backoff=2s --max-backoff=30s
+# Cloud Run's service account must be allowed to create tasks:
+gcloud projects add-iam-policy-binding <project> \
+  --member="serviceAccount:<cloud-run-service-account>" --role="roles/cloudtasks.enqueuer"
+# then on the Cloud Run service:
+#   KEEPER_TASKS_QUEUE=projects/<project>/locations/<your-region>/queues/utd-keeper
+#   KEEPER_TICK_URL=<cloud-run-service-url>/api/keeper/tick
+```
+
+`/api/keeper/tick` answers `503` while another tick holds the relayer's send
+lock (`KeeperLock`), and Cloud Tasks retries with backoff. That's expected under load.
+
+**Keeper gas.** Players pay no fee for automatic payouts: the relayer's gas
+comes out of the platform's cut of each pot (at least 5% of the pot after
+maxed-out referrers, vs. roughly 73k gas ≈ 0.000003 ETH per batched payout at
+0.042 gwei, measured in `Contracts/test/duel/KeeperBatch.t.sol`). Unjoined
+lobbies earn the platform nothing, so their auto-refund is a small pure cost.
+Creating a lobby costs its creator more gas than refunding it costs you, so
+lobby spam can't drain the wallet cheaply.
+
+### Automatic relayer gas top-up (no manual transfers)
+
+The relayer wallet refills itself with ETH -- nobody sends it gas by hand.
+`lib/relayerTopUp.ts::maybeTopUpRelayer` runs as the last step of every keeper
+tick (`lib/settlementRelayer.ts::runKeeperTick`), so it reacts within seconds
+of a settlement, not on a separate schedule:
+
+1. If the relayer's ETH balance is at or above `KEEPER_MIN_BALANCE_ETH`
+   (default 0.002), it's a no-op -- one cheap balance read.
+2. Otherwise it pulls `KeeperConfig.topUpUsdg` worth of USDG (default **$1** --
+   admin-adjustable, see below) from the platform treasury, via a **capped
+   allowance the treasury signs once, up front, never the treasury's own
+   key on the server**:
+   ```bash
+   cast send <stakeToken> "approve(address,uint256)" <relayer-address> <cap-in-usdg-base-units>      --private-key <treasury-key, entered interactively, never in shell history>      --rpc-url https://rpc.mainnet.chain.robinhood.com
+   ```
+   A $200 cap (`200000000` at USDG's 6 decimals) is a reasonable starting
+   point -- at $1/top-up and roughly 120 batched payouts per top-up
+   (`Contracts/test/duel/KeeperBatch.t.sol`'s measured gas), that's ~40
+   top-ups, ~4,800 payouts, before it needs renewing. **If the relayer's own
+   key ever leaks, this cap is the most anyone can ever pull from the
+   treasury** -- keep it modest and renew it periodically rather than
+   granting a huge allowance once.
+3. It swaps that USDG for ETH on the real, on-chain-verified Uniswap v3
+   USDG/WETH pool (`config/contracts.ts`'s `gasSwap`: `SwapRouter02` +
+   `QuoterV2`, 0.01% fee tier), with a 0.5% slippage floor off a live quote,
+   and unwraps straight to native ETH for the relayer.
+4. At most `KEEPER_TOPUP_MAX_PER_DAY` (default 3) top-ups per day -- a
+   circuit breaker, not a normal limit. Hitting it, the allowance running
+   low, or the swap itself failing all post to `ALERT_WEBHOOK_URL` instead of
+   silently stalling.
+
+**Raising the per-top-up amount as the treasury grows** (e.g. $1 → $5) needs
+no redeploy, no restart, and doesn't touch the treasury's on-chain allowance:
+
+```bash
+curl -X PATCH https://<cloud-run-url>/api/admin/keeper-config   -H "x-admin-secret: <ADMIN_API_SECRET>"   -H "content-type: application/json"   -d '{"topUpUsdg": 5}'
+# GET the same URL (with the same header) to read the current value.
+```
+
+Takes effect on the very next tick. Capped at 50 in the route itself
+(independent of the treasury's own allowance ceiling above) so a mistyped
+value can't swap a large chunk of the treasury's allowance in one shot.
 
 The discovery scan (`POST /api/scan`) populates `OracleHealthSample`, which
 `lib/duelGuards.ts::checkCanCreateLobby` reads before allowing any new duel —
@@ -318,9 +396,11 @@ surface grows (tracked in [`README.md`'s open items](README.md#known-gaps--open-
 | Secret | Used by | Never |
 |---|---|---|
 | `ORACLE_SIGNER_PRIVATE_KEY` (+ `_PREVIOUS` during a rotation window) | Signs `settle()`/`voidActive()` results (`lib/oracleSigner.ts`) | Never the same wallet as `RELAYER_PRIVATE_KEY` — this key decides who wins, it must not also send transactions |
-| `RELAYER_PRIVATE_KEY` | Submits signed `settle()` transactions on a keeper's behalf (`lib/settlementRelayer.ts`); holds only gas ETH | Never an oracle signer key — enforced at runtime, throws if it matches |
-| `CRON_SECRET` | Bearer token `GET /api/cron/settle` requires (`lib/adminAuth.ts::isAuthorizedCron`) | — |
-| `ADMIN_API_SECRET` | `x-admin-secret` header the `/api/admin/**` routes require (`lib/adminAuth.ts::isAuthorizedAdmin`) | Treat as a real operator secret; this is a stop-gap, not a full admin-identity system |
+| `RELAYER_PRIVATE_KEY` | The keeper wallet: sends every automatic `settle()`/`expire()`/`refundStale()` (`lib/settlementRelayer.ts`); holds only gas ETH, topped up automatically from a capped treasury allowance (`lib/relayerTopUp.ts`) | Never an oracle signer key — enforced at runtime, throws if it matches |
+| `KEEPER_MIN_BALANCE_ETH` | Balance below which the relayer alerts (cron) and auto-tops-up (every tick), default `0.002` | — |
+| `KEEPER_TOPUP_MAX_PER_DAY` | Circuit breaker on the auto-top-up, default `3` | — |
+| `CRON_SECRET` | Bearer token `GET /api/cron/settle` and `POST /api/keeper/tick` require (`lib/adminAuth.ts::isAuthorizedCron`); also set on each Cloud Task | — |
+| `ADMIN_API_SECRET` | `x-admin-secret` header the `/api/admin/**` routes require (`lib/adminAuth.ts::isAuthorizedAdmin`), including `GET`/`PATCH /api/admin/keeper-config` | Treat as a real operator secret; this is a stop-gap, not a full admin-identity system |
 | `MONGODB_URI` | The only datastore; every route connects through `lib/mongoose.ts` | — |
 
 ## 8. Verification checklist

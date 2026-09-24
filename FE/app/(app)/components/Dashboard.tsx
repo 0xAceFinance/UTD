@@ -1,12 +1,13 @@
 "use client"
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { ArrowUpDown, ExternalLink, Plus, User } from "lucide-react"
+import { ArrowUpDown, ExternalLink, Plus, Timer, User } from "lucide-react"
 import Link from "next/link"
 import { useEffect, useState, type ReactNode } from "react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { useWallet } from "@/hooks/useWallet"
+import { useCountdown } from "@/hooks/useCountdown"
 import { joinDuelOnChain } from "@/lib/duelContract"
 import { getFriendlyErrorMessage } from "@/lib/walletErrors"
 import { getStoredRef } from "@/lib/referralClient"
@@ -15,7 +16,7 @@ import { PausedBanner } from "./duel/PausedBanner"
 import { SideTag, StatusTag, TierBadge } from "./duel/SideTag"
 import { gmgnTokenUrl } from "@/lib/tokenLinks"
 import { arcadeAudio } from "@/lib/sound/arcadeAudio"
-import { DuelDTO, DuelStatus, DuelTokenDTO, formatRelativeTime, formatUsd, pctReturn } from "./duel/types"
+import { DuelDTO, DuelStatus, DuelTokenDTO, formatRelativeTime, formatUsd, pctReturn, withOpenSlot } from "./duel/types"
 
 const STATUS_TABS: { label: string; value: DuelStatus | "ALL" }[] = [
     { label: "Open", value: "OPEN" },
@@ -40,9 +41,10 @@ export default function Dashboard() {
     const [loading, setLoading] = useState(true)
     const [joiningId, setJoiningId] = useState<string | null>(null)
     const [pendingJoin, setPendingJoin] = useState<DuelDTO | null>(null)
-    // The token the joiner picked in place of the creator's proposed opposing
-    // token, if any -- null means "use the default". Reset whenever a new
-    // join dialog opens (see openJoinConfirm).
+    // The joiner's token pick. Required for a new lobby (the creator picks only
+    // their own token); on a legacy lobby with a proposed opposing token, null
+    // means "keep the proposal". Reset whenever a new join dialog opens (see
+    // openJoinConfirm).
     const [opponentTokenSymbol, setOpponentTokenSymbol] = useState<string | null>(null)
     const paused = useFactoryState()?.paused ?? false
 
@@ -131,9 +133,30 @@ export default function Dashboard() {
             toast.error("Connect your wallet to join a duel.")
             return
         }
+        if (new Date(pendingJoin.openDeadline).getTime() <= Date.now()) {
+            toast.error("This lobby just expired.")
+            setPendingJoin(null)
+            return
+        }
+        const proposedSymbol = (pendingJoin.creatorSide === 0 ? pendingJoin.tokenB : pendingJoin.tokenA)?.symbol
+        if (!opponentTokenSymbol && !proposedSymbol) {
+            toast.error("Pick your token first.")
+            return
+        }
         const duelId = pendingJoin._id
         setJoiningId(duelId)
         try {
+            // Validate the token pick and that the lobby is still open *before*
+            // the wallet locks a stake -- the POST below re-checks, but by then
+            // the on-chain join has already happened.
+            const precheckParams = new URLSearchParams()
+            if (opponentTokenSymbol) precheckParams.set("opponentTokenSymbol", opponentTokenSymbol)
+            const precheck = await fetch(`/api/duels/${duelId}/join?${precheckParams}`).then((r) => r.json())
+            if (!precheck.success) {
+                toast.error(precheck.error ?? "You can't join this duel right now.")
+                return
+            }
+
             let txHash: string | undefined
             if (pendingJoin.escrowAddress) {
                 toast.info("Confirm the approval and join transactions in your wallet.")
@@ -321,13 +344,14 @@ export default function Dashboard() {
                         (() => {
                             const mySide: 0 | 1 = pendingJoin.creatorSide === 0 ? 1 : 0
                             const proposedToken = mySide === 0 ? pendingJoin.tokenA : pendingJoin.tokenB
-                            const theirToken = mySide === 0 ? pendingJoin.tokenB : pendingJoin.tokenA
-                            const myTokenSymbol = opponentTokenSymbol ?? proposedToken.symbol
-                            // Any other Top 10 token the joiner could swap in for the
-                            // creator's proposed pick -- excludes both sides already in play.
-                            const tokenOptions = tokens.filter(
-                                (t) => t.symbol !== theirToken.symbol && t.symbol !== proposedToken.symbol
-                            )
+                            const theirToken = withOpenSlot(pendingJoin)[mySide === 0 ? "tokenB" : "tokenA"]
+                            const myTokenSymbol = opponentTokenSymbol ?? proposedToken?.symbol ?? null
+                            // The creator's token (matched by symbol or address -- two
+                            // tokens can share a ticker) can never be picked.
+                            const isTheirToken = (t: DuelTokenDTO) =>
+                                t.symbol === theirToken.symbol ||
+                                (!!theirToken.tokenAddress && t.tokenAddress.toLowerCase() === theirToken.tokenAddress.toLowerCase())
+                            const tokenOptions = tokens.filter((t) => t.symbol !== proposedToken?.symbol)
                             const pot = pendingJoin.buyInUsd * 2
                             const winAmount = Math.round(pot * 0.9)
                             const busy = joiningId === pendingJoin._id
@@ -347,7 +371,11 @@ export default function Dashboard() {
                                                 You play
                                             </div>
                                             <div className="mt-2">
-                                                <SideTag side={mySide === 0 ? "A" : "B"} label={myTokenSymbol} />
+                                                {myTokenSymbol ? (
+                                                    <SideTag side={mySide === 0 ? "A" : "B"} label={myTokenSymbol} />
+                                                ) : (
+                                                    <span className="text-[13px] text-[var(--acid)]">Pick a token below</span>
+                                                )}
                                             </div>
                                         </div>
                                         <div className="bg-[var(--s2)] p-3.5">
@@ -363,30 +391,38 @@ export default function Dashboard() {
                                     {tokenOptions.length > 0 && (
                                         <div className="mt-3">
                                             <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--faint)]">
-                                                Change your token
+                                                {proposedToken ? "Change your token" : "Pick your token"}
                                             </div>
                                             <div className="mt-2 flex flex-wrap gap-1.5">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setOpponentTokenSymbol(null)}
-                                                    className={`app-chip h-8 px-2.5 text-[11px] ${
-                                                        !opponentTokenSymbol ? "border-[var(--acid)] text-[var(--acid)]" : ""
-                                                    }`}
-                                                >
-                                                    {proposedToken.symbol} (proposed)
-                                                </button>
-                                                {tokenOptions.map((t) => (
+                                                {proposedToken && (
                                                     <button
-                                                        key={t.symbol}
                                                         type="button"
-                                                        onClick={() => setOpponentTokenSymbol(t.symbol)}
+                                                        onClick={() => setOpponentTokenSymbol(null)}
                                                         className={`app-chip h-8 px-2.5 text-[11px] ${
-                                                            opponentTokenSymbol === t.symbol ? "border-[var(--acid)] text-[var(--acid)]" : ""
+                                                            !opponentTokenSymbol ? "border-[var(--acid)] text-[var(--acid)]" : ""
                                                         }`}
                                                     >
-                                                        {t.symbol}
+                                                        {proposedToken.symbol} (proposed)
                                                     </button>
-                                                ))}
+                                                )}
+                                                {tokenOptions.map((t) => {
+                                                    const taken = isTheirToken(t)
+                                                    return (
+                                                        <button
+                                                            key={t.symbol}
+                                                            type="button"
+                                                            disabled={taken}
+                                                            title={taken ? "Your opponent already picked this token" : undefined}
+                                                            onClick={() => setOpponentTokenSymbol(t.symbol)}
+                                                            className={`app-chip h-8 px-2.5 text-[11px] disabled:cursor-not-allowed disabled:opacity-40 ${
+                                                                opponentTokenSymbol === t.symbol ? "border-[var(--acid)] text-[var(--acid)]" : ""
+                                                            }`}
+                                                        >
+                                                            {t.symbol}
+                                                            {taken && " · taken"}
+                                                        </button>
+                                                    )
+                                                })}
                                             </div>
                                         </div>
                                     )}
@@ -397,12 +433,15 @@ export default function Dashboard() {
                                         <Row k="Round" v={`${Math.round(pendingJoin.durationSeconds / 60)} min`} />
                                         <Row k="If you win (90%)" v={`$${winAmount}`} accent />
                                     </dl>
+                                    <p className="mt-2 text-[12px] text-[var(--faint)]">
+                                        Winnings are paid to your wallet automatically when the round ends. Nothing to claim.
+                                    </p>
 
                                     <div className="mt-5 grid grid-cols-2 gap-2.5">
                                         <button onClick={() => setPendingJoin(null)} className="app-chip h-11 justify-center">
                                             Cancel
                                         </button>
-                                        <button disabled={busy || paused} onClick={() => handleJoin()} className="utd-btn h-11 text-[9px]">
+                                        <button disabled={busy || paused || !myTokenSymbol} onClick={() => handleJoin()} className="utd-btn h-11 text-[9px]">
                                             {busy ? "JOINING…" : "CONFIRM"}
                                         </button>
                                     </div>
@@ -476,11 +515,13 @@ function LobbyRow({
 }) {
     const isMine = Boolean(me) && (l.creatorWallet === me || l.opponentWallet === me)
     const isMyOpenLobby = l.status === "OPEN" && l.creatorWallet === me
-    const canJoin = l.status === "OPEN" && !isMyOpenLobby
+    const openCountdown = useCountdown(l.status === "OPEN" ? l.openDeadline : undefined)
+    const expired = l.status === "OPEN" && openCountdown.totalSec <= 0
+    const canJoin = l.status === "OPEN" && !isMyOpenLobby && !expired
     const started = l.status !== "OPEN" && l.status !== "EXPIRED" && l.status !== "CANCELLED"
 
     const side = (idx: 0 | 1) => {
-        const t = idx === 0 ? l.tokenA : l.tokenB
+        const t = idx === 0 ? l.tokenA : withOpenSlot(l).tokenB
         let note: ReactNode = null
         if (started) {
             const pct = pctReturn(t.startMarketCapUsd, t.currentMarketCapUsd)
@@ -516,7 +557,19 @@ function LobbyRow({
         >
             <div className="flex items-center justify-between md:flex-col md:items-start md:gap-1">
                 <StatusTag status={l.status} />
-                <span className="font-mono text-[11px] text-[var(--faint)]">{formatRelativeTime(l.createdAt)}</span>
+                {l.status === "OPEN" ? (
+                    <span
+                        className={`inline-flex items-center gap-1 font-mono text-[11px] tabular-nums ${
+                            expired ? "text-[var(--faint)]" : openCountdown.totalSec < 60 ? "text-[var(--hot)]" : "text-[var(--acid)]"
+                        }`}
+                        title="Time left before this lobby closes on-chain"
+                    >
+                        <Timer className="h-3 w-3" />
+                        {expired ? "Expired" : `${openCountdown.label} left`}
+                    </span>
+                ) : (
+                    <span className="font-mono text-[11px] text-[var(--faint)]">{formatRelativeTime(l.createdAt)}</span>
+                )}
             </div>
 
             <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 md:grid-cols-[minmax(0,120px)_auto_minmax(0,120px)] md:gap-4">

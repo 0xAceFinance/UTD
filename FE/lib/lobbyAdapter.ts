@@ -15,7 +15,7 @@ export function toLobbySnapshot(duel: IDuel): Lobby {
         creator: duel.creatorWallet,
         opponent: duel.opponentWallet,
         tokenASymbol: duel.tokenA.symbol,
-        tokenBSymbol: duel.tokenB.symbol,
+        tokenBSymbol: duel.tokenB?.symbol ?? '',
         creatorSide: duel.creatorSide,
         durationSeconds: duel.durationSeconds,
         createdAtSec: Math.floor(duel.createdAt.getTime() / 1000),
